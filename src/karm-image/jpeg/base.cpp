@@ -173,36 +173,63 @@ export struct BitReader {
 
     u8 _buf = 0;
     u8 _len = 0;
+    bool _scanEnded = false;  // Add this flag
 
     always_inline BitReader(Io::BScan& s) : s(s) {}
 
     always_inline void reset() {
         _buf = 0x0;
         _len = 0x0;
+        _scanEnded = false;  // Reset the flag too
     }
 
     always_inline Res<> fill() {
         if (_len)
             return Ok();
 
+        if (_scanEnded) {
+            // Return a special indicator that we've reached end of scan
+            // Set _len to 0 so subsequent calls know we're done
+            return Ok();  // Return Ok but with _len still 0
+        }
+
+        if (s.ended())
+            return Error::invalidData("unexpected end of data");
+
         _buf = s.nextU8be();
+        
+        // Handle 0xFF padding and markers
         while (_buf == 0xFF) {
+            if (s.ended())
+                return Error::invalidData("unexpected end of data after 0xFF");
+                
             u8 marker = s.peekU8be();
 
+            // Skip multiple 0xFF padding bytes
             while (marker == 0xFF) {
                 s.nextU8be();
+                if (s.ended())
+                    return Error::invalidData("unexpected end of data");
                 marker = s.peekU8be();
             }
 
             if (marker == 0x00) {
+                // 0xFF00 means literal 0xFF in data
                 s.nextU8be();
                 break;
             } else if (RST0 <= marker and marker <= RST7) {
+                // Restart marker - consume it and read next byte
                 s.nextU8be();
+                if (s.ended())
+                    return Error::invalidData("unexpected end of data after RST");
                 _buf = s.nextU8be();
             } else {
-                logError("jpeg: invalid marker");
-                return Error::invalidData("invalid marker");
+                // Any other marker (including EOI) - end of scan data
+                logDebug("jpeg: BitReader encountered marker 0x{:02x}, ending scan", marker);
+                _scanEnded = true;
+                _len = 0;  // Signal no more bits available
+                _buf = 0;
+                return Ok();  // Return success but with _len=0
             }
         }
 
@@ -212,6 +239,10 @@ export struct BitReader {
 
     always_inline Res<u8> nextBit() {
         try$(fill());
+        if (_len == 0) {
+            // No more data available
+            return Error::invalidData("end of scan data");
+        }
         u8 bit = _buf >> 7;
         _buf <<= 1;
         _len--;

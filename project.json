@@ -1,6 +1,6 @@
 {
     "$schema": "https://schemas.cute.engineering/stable/cutekit.manifest.project.v1",
-    "id": "skift/karm",
+    "id": "skift-org/karm",
     "type": "project",
     "description": "A batteries included framework for modern cross-platform C++ applications",
     "extern": {
