@@ -19,13 +19,14 @@ export struct PdfPrinter : FilePrinter {
     Vec<PdfPage> _pages;
     Opt<Pdf::Canvas> _canvas;
     Pdf::FontManager fontManager;
+    Pdf::ImageManager imageManager;
     Vec<Pdf::GraphicalStateDict> graphicalStates;
 
     Gfx::Canvas& beginPage(PaperStock paper) override {
         auto& page = _pages.emplaceBack(paper);
-        _canvas = Pdf::Canvas{page.data, paper.size(), &fontManager, graphicalStates};
+        _canvas = Pdf::Canvas{page.data, paper.size(), &fontManager, &imageManager, graphicalStates};
 
-        // Convert fron the karm-pdf internal units to PDF units (1/72 inch)
+        // Convert from the karm-pdf internal units to PDF units (1/72 inch)
         _canvas->scale(72.0 / DPI);
 
         // NOTE: PDF has the coordinate system origin at the bottom left corner.
@@ -82,6 +83,58 @@ export struct PdfPrinter : FilePrinter {
             );
         }
 
+        // Images
+        Map<usize, Pdf::Ref> imageId2ObjRef;
+        for (auto& img : imageManager.images) {
+            // Create soft mask (alpha channel) if present
+            Opt<Pdf::Ref> softMaskRef = NONE;
+            if (img.alphaData) {
+                auto maskRef = alloc.alloc();
+                file.add(
+                    maskRef,
+                    Pdf::Stream{
+                        .dict = Pdf::Dict{
+                            {"Type"s, Pdf::Name{"XObject"s}},
+                            {"Subtype"s, Pdf::Name{"Image"s}},
+                            {"Width"s, (usize)img.size.x},
+                            {"Height"s, (usize)img.size.y},
+                            {"ColorSpace"s, Pdf::Name{"DeviceGray"s}},
+                            {"BitsPerComponent"s, usize{8}},
+                            {"Length"s, img.alphaData->len()},
+                        },
+                        .data = *img.alphaData,
+                    }
+                );
+                softMaskRef = maskRef;
+            }
+
+            // Create the image XObject
+            auto imgRef = alloc.alloc();
+            Pdf::Dict imgDict{
+                {"Type"s, Pdf::Name{"XObject"s}},
+                {"Subtype"s, Pdf::Name{"Image"s}},
+                {"Width"s, (usize)img.size.x},
+                {"Height"s, (usize)img.size.y},
+                {"ColorSpace"s, Pdf::Name{"DeviceRGB"s}},
+                {"BitsPerComponent"s, usize{8}},
+                {"Length"s, img.rgbData.len()},
+            };
+
+            if (softMaskRef) {
+                imgDict.put("SMask"s, *softMaskRef);
+            }
+
+            file.add(
+                imgRef,
+                Pdf::Stream{
+                    .dict = std::move(imgDict),
+                    .data = img.rgbData,
+                }
+            );
+
+            imageId2ObjRef.put(img.id, imgRef);
+        }
+
         // Page
         for (auto& p : _pages) {
             Pdf::Ref pageRef = alloc.alloc();
@@ -94,6 +147,23 @@ export struct PdfPrinter : FilePrinter {
                 pageFontsDict.put(formattedName.str(), objRef);
             }
 
+            // Add all images to page resources
+            Pdf::Dict pageImagesDict;
+            for (auto& [imageId, objRef] : imageId2ObjRef._els) {
+                auto formattedName = Io::format("Im{}", imageId);
+                pageImagesDict.put(formattedName.str(), objRef);
+            }
+
+            Pdf::Dict resourcesDict{
+                {"Font"s, pageFontsDict},
+                {"ExtGState"s, graphicalStatesDict},
+            };
+
+            // Only add XObject if there are images
+            if (pageImagesDict.len() > 0) {
+                resourcesDict.put("XObject"s, pageImagesDict);
+            }
+
             file.add(
                 pageRef,
                 Pdf::Dict{
@@ -103,7 +173,7 @@ export struct PdfPrinter : FilePrinter {
                      Pdf::Array{
                          usize{0},
                          usize{0},
-                         // Convert fron the karm-pdf internal units to PDF units (1/72 inch)
+                         // Convert from the karm-pdf internal units to PDF units (1/72 inch)
                          p.paper.width * (72.0 / DPI),
                          p.paper.height * (72.0 / DPI),
                      }},
@@ -113,14 +183,7 @@ export struct PdfPrinter : FilePrinter {
                     },
                     {
                         "Resources"s,
-                        Pdf::Dict{
-                            {
-                                "Font"s,
-                                pageFontsDict,
-                            },
-                            {"ExtGState"s,
-                             graphicalStatesDict}
-                        },
+                        std::move(resourcesDict),
                     }
                 }
             );

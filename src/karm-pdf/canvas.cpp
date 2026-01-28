@@ -28,16 +28,84 @@ export struct GraphicalStateDict {
     f64 opacity;
 };
 
+// Image data for PDF XObject
+export struct ImageData {
+    usize id;
+    Math::Vec2i size;
+    Buf<u8> rgbData;      // RGB pixel data
+    Opt<Buf<u8>> alphaData; // Optional alpha channel (soft mask)
+};
+
+export struct ImageManager {
+    Vec<ImageData> images;
+    usize nextId = 1;
+
+    usize addImage(Gfx::Pixels pixels) {
+        auto id = nextId++;
+        
+        auto width = pixels.width();
+        auto height = pixels.height();
+        
+        // Convert pixels to RGB and optionally extract alpha
+        Vec<u8> rgbVec;
+        Vec<u8> alphaVec;
+        bool hasAlpha = false;
+        
+        rgbVec.ensure(width * height * 3);
+        alphaVec.ensure(width * height);
+        
+        for (isize y = 0; y < height; ++y) {
+            for (isize x = 0; x < width; ++x) {
+                auto color = pixels.load({x, y});
+                rgbVec.pushBack(color.red);
+                rgbVec.pushBack(color.green);
+                rgbVec.pushBack(color.blue);
+                alphaVec.pushBack(color.alpha);
+                if (color.alpha != 255)
+                    hasAlpha = true;
+            }
+        }
+        
+        // Convert Vec to Buf
+        Buf<u8> rgbData;
+        rgbData.resize(rgbVec.len());
+        for (usize i = 0; i < rgbVec.len(); ++i) {
+            rgbData[i] = rgbVec[i];
+        }
+        
+        Opt<Buf<u8>> alphaData = NONE;
+        if (hasAlpha) {
+            Buf<u8> alpha;
+            alpha.resize(alphaVec.len());
+            for (usize i = 0; i < alphaVec.len(); ++i) {
+                alpha[i] = alphaVec[i];
+            }
+            alphaData = std::move(alpha);
+        }
+        
+        ImageData data{
+            .id = id,
+            .size = {(int)width, (int)height},
+            .rgbData = std::move(rgbData),
+            .alphaData = std::move(alphaData),
+        };
+        
+        images.pushBack(std::move(data));
+        return id;
+    }
+};
+
 export struct Canvas : Gfx::Canvas {
     Io::Emit _e;
     Math::Vec2f _mediaBox{};
     Math::Vec2f _p{};
 
     MutCursor<FontManager> _fontManager;
+    MutCursor<ImageManager> _imageManager;
     Vec<GraphicalStateDict>& _graphicalStates;
 
-    Canvas(Io::Emit e, Math::Vec2f mediaBox, MutCursor<FontManager> fontManager, Vec<GraphicalStateDict>& graphicalStates)
-        : _e{e}, _mediaBox{mediaBox}, _fontManager{fontManager}, _graphicalStates(graphicalStates) {}
+    Canvas(Io::Emit e, Math::Vec2f mediaBox, MutCursor<FontManager> fontManager, MutCursor<ImageManager> imageManager, Vec<GraphicalStateDict>& graphicalStates)
+        : _e{e}, _mediaBox{mediaBox}, _fontManager{fontManager}, _imageManager{imageManager}, _graphicalStates(graphicalStates) {}
 
     Math::Vec2f _mapPoint(Math::Vec2f p, Flags<Math::Path::Option> options) {
         if (options & Math::Path::RELATIVE)
@@ -295,8 +363,44 @@ export struct Canvas : Gfx::Canvas {
 
     // MARK: Blit Operations ---------------------------------------------------
 
-    void blit(Math::Recti, Math::Recti, Gfx::Pixels) override {
-        logDebugIf(debugCanvas, "pdf: blit() operation not implemented");
+    void blit(Math::Recti dest, Gfx::Pixels pixels) override {
+        if (not _imageManager) {
+            logDebugIf(debugCanvas, "pdf: blit() - no image manager available");
+            return;
+        }
+
+        auto imageId = _imageManager->addImage(pixels);
+
+        // Save graphics state
+        push();
+
+        // Set up transformation matrix to place and scale the image
+        // PDF images are 1x1 unit by default, so we need to scale them
+        // The transformation matrix is: [width 0 0 height x y]
+        _e.ln("{} 0 0 {} {} {} cm",
+            dest.width,
+            dest.height,
+            dest.x,
+            dest.y);
+
+        // Draw the image
+        _e.ln("/Im{} Do", imageId);
+
+        // Restore graphics state
+        pop();
+    }
+
+    void blit(Math::Recti src, Math::Recti dest, Gfx::Pixels pixels) override {
+        // For simplicity, if src doesn't match full image, create a sub-image
+        if (src.x == 0 and src.y == 0 and 
+            src.width == pixels.width() and src.height == pixels.height()) {
+            blit(dest, pixels);
+            return;
+        }
+
+        // TODO: Handle sub-image blitting if needed
+        // For now, just blit the full image scaled to dest
+        blit(dest, pixels);
     }
 
     // MARK: Filter Operations -------------------------------------------------
