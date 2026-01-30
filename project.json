@@ -53,6 +53,12 @@
             "names": [
                 "libseccomp"
             ]
+        },
+        "jpeg": {
+            "description": "JPEG image compression library",
+            "names": [
+                "libjpeg"
+            ]
         }
     }
 }
