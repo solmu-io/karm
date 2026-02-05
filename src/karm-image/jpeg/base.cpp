@@ -319,7 +319,6 @@ export struct Huff {
             }
         }
 
-        logError("jpeg: invalid huffman code {x}", code);
         return Error::invalidData("invalid huffman code");
     }
 

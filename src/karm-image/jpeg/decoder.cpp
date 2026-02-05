@@ -93,7 +93,6 @@ export struct Decoder {
 
     static Res<Decoder> init(Bytes slice) {
         if (not sniff(slice)) {
-            logError("jpeg: not a JPEG image");
             return Error::invalidData("not a JPEG image");
         }
 
@@ -108,7 +107,6 @@ export struct Decoder {
 
         if (setjmp(jerr.jumpBuffer)) {
             jpeg_destroy_decompress(&cinfo);
-            logError("jpeg: decompression failed: {}", Str{jerr.message});
             return Error::invalidData("JPEG decompression failed");
         }
 
@@ -132,7 +130,6 @@ export struct Decoder {
         dec._height = cinfo.output_height;
 
         bool isProgressive = cinfo.progressive_mode;
-        logInfo("jpeg: image {}x{}, progressive={}", dec._width, dec._height, isProgressive);
 
         // Allocate surface
         dec._surface = Gfx::Surface::alloc({dec._width, dec._height}, Gfx::RGBA8888);
@@ -160,8 +157,6 @@ export struct Decoder {
 
         jpeg_finish_decompress(&cinfo);
         jpeg_destroy_decompress(&cinfo);
-
-        logInfo("jpeg: decode completed");
 
         return Ok(dec);
     }
