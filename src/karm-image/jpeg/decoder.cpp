@@ -129,8 +129,6 @@ export struct Decoder {
         dec._width = cinfo.output_width;
         dec._height = cinfo.output_height;
 
-        bool isProgressive = cinfo.progressive_mode;
-
         // Allocate surface
         dec._surface = Gfx::Surface::alloc({dec._width, dec._height}, Gfx::RGBA8888);
 
