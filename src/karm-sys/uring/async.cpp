@@ -56,7 +56,9 @@ struct UringSched : Sys::Sched {
             io_uring_sqe* sqe = io_uring_get_sqe(&_uring._ring);
             if (not sqe) [[unlikely]]
                 panic("failed to get sqe");
-            io_uring_prep_cancel64(sqe, reinterpret_cast<usize>(this), 0);
+            // use io_uring_prep_cancel to support older versions of liburing
+            // io_uring_prep_cancel64(sqe, reinterpret_cast<usize>(this), 0);
+            io_uring_prep_cancel(sqe, this, 0);
             sqe->user_data = reinterpret_cast<usize>(&CANCEL_TOKEN);
             io_uring_submit(&_uring._ring);
         }
