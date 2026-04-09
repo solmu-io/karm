@@ -42,9 +42,7 @@ Res<Rc<Gfx::Surface>> loadPng(Bytes bytes) {
 
 Res<Rc<Gfx::Surface>> loadJpeg(Bytes bytes) {
     auto jpeg = try$(Jpeg::Decoder::init(bytes));
-    auto img = Gfx::Surface::alloc({jpeg.width(), jpeg.height()});
-    try$(jpeg.decode(*img));
-    return Ok(img);
+    return Ok(jpeg._surface.unwrap());  // return the surface built during init, no copy
 }
 
 Res<Rc<Gfx::Surface>> loadTga(Bytes bytes) {

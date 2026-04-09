@@ -1,3 +1,7 @@
+module;
+
+#include <cstring>
+
 export module Karm.Gfx:cpu.canvas;
 
 import Karm.Math;
@@ -439,15 +443,35 @@ export struct CpuCanvas : Canvas {
         auto hratio = srcRect.height / (f64)destRect.height;
         auto wratio = srcRect.width / (f64)destRect.width;
 
+        // Fast path: same size, same format, identity transform — memcpy per scanline
+        if (srcRect.width == destRect.width and
+            srcRect.height == destRect.height and
+            src.fmt().index() == dest.fmt().index() and
+            hratio == 1.0 and wratio == 1.0) {
+
+            usize rowBytes = clipDest.width * src.fmt().bpp();
+
+            for (isize y = 0; y < clipDest.height; ++y) {
+                isize srcY = srcRect.y + (clipDest.y - destRect.y) + y;
+                isize srcX = srcRect.x + (clipDest.x - destRect.x);
+                isize destY = clipDest.y + y;
+                isize destX = clipDest.x;
+
+                void const* srcRow = src.pixelUnsafe({srcX, srcY});
+                void*       dstRow = dest.pixelUnsafe({destX, destY});
+                std::memcpy(dstRow, srcRow, rowBytes);
+            }
+            return;
+        }
+
+        // Slow path: scaling, different formats, or alpha blending needed
         for (isize y = 0; y < clipDest.height; ++y) {
             isize yy = clipDest.y - destRect.y + y;
-
             auto srcY = srcRect.y + yy * hratio;
             auto destY = clipDest.y + y;
 
             for (isize x = 0; x < clipDest.width; ++x) {
                 isize xx = clipDest.x - destRect.x + x;
-
                 auto srcX = srcRect.x + xx * wratio;
                 auto destX = clipDest.x + x;
 

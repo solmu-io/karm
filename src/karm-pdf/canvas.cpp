@@ -42,55 +42,45 @@ export struct ImageManager {
 
     usize addImage(Gfx::Pixels pixels) {
         auto id = nextId++;
-        
         auto width = pixels.width();
         auto height = pixels.height();
-        
-        // Convert pixels to RGB and optionally extract alpha
-        Vec<u8> rgbVec;
-        Vec<u8> alphaVec;
+
+        Buf<u8> rgbData;
+        Buf<u8> alphaBuf;
         bool hasAlpha = false;
-        
-        rgbVec.ensure(width * height * 3);
-        alphaVec.ensure(width * height);
-        
+
+        rgbData.resize(width * height * 3);
+        alphaBuf.resize(width * height);
+
+        u8 const* buf = static_cast<u8 const*>(pixels._buf);
+        usize bpp = pixels.fmt().bpp();
+        usize stride = pixels._stride;
+
+        // Write directly via raw pointers — bypasses Manual<T>::unwrap() on every access
+        u8* rgbPtr = rgbData.buf();
+        u8* alphaPtr = alphaBuf.buf();
+
         for (isize y = 0; y < height; ++y) {
+            u8 const* row = buf + y * stride;
             for (isize x = 0; x < width; ++x) {
-                auto color = pixels.load({x, y});
-                rgbVec.pushBack(color.red);
-                rgbVec.pushBack(color.green);
-                rgbVec.pushBack(color.blue);
-                alphaVec.pushBack(color.alpha);
-                if (color.alpha != 255)
+                u8 const* px = row + x * bpp;
+                *rgbPtr++ = px[0];
+                *rgbPtr++ = px[1];
+                *rgbPtr++ = px[2];
+                u8 alpha = bpp >= 4 ? px[3] : 255;
+                *alphaPtr++ = alpha;
+                if (alpha != 255)
                     hasAlpha = true;
             }
         }
-        
-        // Convert Vec to Buf
-        Buf<u8> rgbData;
-        rgbData.resize(rgbVec.len());
-        for (usize i = 0; i < rgbVec.len(); ++i) {
-            rgbData[i] = rgbVec[i];
-        }
-        
-        Opt<Buf<u8>> alphaData = NONE;
-        if (hasAlpha) {
-            Buf<u8> alpha;
-            alpha.resize(alphaVec.len());
-            for (usize i = 0; i < alphaVec.len(); ++i) {
-                alpha[i] = alphaVec[i];
-            }
-            alphaData = std::move(alpha);
-        }
-        
-        ImageData data{
+
+        images.pushBack(ImageData{
             .id = id,
-            .size = {(int)width, (int)height},
+            .size = {width, height},
             .rgbData = std::move(rgbData),
-            .alphaData = std::move(alphaData),
-        };
-        
-        images.pushBack(std::move(data));
+            .alphaData = hasAlpha ? Opt<Buf<u8>>(std::move(alphaBuf)) : NONE,
+        });
+
         return id;
     }
 };

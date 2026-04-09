@@ -15,7 +15,6 @@ import Karm.Logger;
 
 namespace Karm::Image::Jpeg {
 
-// Custom error handler to avoid libjpeg calling exit()
 struct ErrorManager {
     jpeg_error_mgr pub;
     jmp_buf jumpBuffer;
@@ -28,7 +27,6 @@ static void errorExit(j_common_ptr cinfo) {
     longjmp(err->jumpBuffer, 1);
 }
 
-// Custom source manager for reading from memory
 struct MemorySourceManager {
     jpeg_source_mgr pub;
     const u8* data;
@@ -39,9 +37,7 @@ static void initSource(j_decompress_ptr) {}
 
 static boolean fillInputBuffer(j_decompress_ptr cinfo) {
     auto* src = reinterpret_cast<MemorySourceManager*>(cinfo->src);
-    // Return false to indicate no more data
     WARNMS(cinfo, JWRN_JPEG_EOF);
-    // Insert a fake EOI marker
     static const JOCTET eoi_buffer[2] = { 0xFF, JPEG_EOI };
     src->pub.next_input_byte = eoi_buffer;
     src->pub.bytes_in_buffer = 2;
@@ -92,12 +88,10 @@ export struct Decoder {
     }
 
     static Res<Decoder> init(Bytes slice) {
-        if (not sniff(slice)) {
+        if (not sniff(slice))
             return Error::invalidData("not a JPEG image");
-        }
 
         Decoder dec{};
-
         jpeg_decompress_struct cinfo;
         ErrorManager jerr;
 
@@ -118,8 +112,9 @@ export struct Decoder {
             return Error::invalidData("failed to read JPEG header");
         }
 
-        // Request RGB output
-        cinfo.out_color_space = JCS_RGB;
+        // Request RGBA output directly — libjpeg-turbo writes straight into
+        // the surface buffer, no intermediate rowBuffer, no per-pixel conversion
+        cinfo.out_color_space = JCS_EXT_RGBA;
 
         if (not jpeg_start_decompress(&cinfo)) {
             jpeg_destroy_decompress(&cinfo);
@@ -129,28 +124,17 @@ export struct Decoder {
         dec._width = cinfo.output_width;
         dec._height = cinfo.output_height;
 
-        // Allocate surface
         dec._surface = Gfx::Surface::alloc({dec._width, dec._height}, Gfx::RGBA8888);
 
-        // Read scanlines
-        usize rowStride = cinfo.output_width * cinfo.output_components;
-        Vec<u8> rowBuffer;
-        rowBuffer.resize(rowStride);
-        JSAMPROW rowPointer = rowBuffer.buf();
+        u8* surfaceBuf = static_cast<u8*>(dec._surface.unwrap()->mutPixels()._buf);
+        usize surfaceStride = dec._surface.unwrap()->mutPixels()._stride;
 
-        auto pixels = dec._surface.unwrap()->mutPixels();
-
+        // Decode each scanline directly into the surface buffer — zero intermediate copies
         while (cinfo.output_scanline < cinfo.output_height) {
             isize y = cinfo.output_scanline;
-            jpeg_read_scanlines(&cinfo, &rowPointer, 1);
-
-            // Convert RGB to RGBA
-            for (isize x = 0; x < dec._width; ++x) {
-                u8 r = rowBuffer[x * 3 + 0];
-                u8 g = rowBuffer[x * 3 + 1];
-                u8 b = rowBuffer[x * 3 + 2];
-                pixels.store({x, y}, Gfx::Color::fromRgb(r, g, b));
-            }
+            JSAMPROW row = surfaceBuf + y * surfaceStride;
+            if (jpeg_read_scanlines(&cinfo, &row, 1) == 0)
+                break;
         }
 
         jpeg_finish_decompress(&cinfo);
@@ -162,28 +146,7 @@ export struct Decoder {
     isize width() const { return _width; }
     isize height() const { return _height; }
 
-    Res<> decode(Gfx::MutPixels pixels) {
-        if (not _surface) {
-            return Error::invalidData("no surface available");
-        }
-        // Copy from surface to output pixels
-        auto srcPixels = _surface.unwrap()->pixels();
-        for (isize y = 0; y < _height; ++y) {
-            for (isize x = 0; x < _width; ++x) {
-                auto color = srcPixels.load({x, y});
-                pixels.store({x, y}, color);
-            }
-        }
-        return Ok();
-    }
-
-    void repr(Io::Emit& e) const {
-        e("JPEG image (libjpeg-turbo)");
-        e.indentNewline();
-        e.ln("width: {}", _width);
-        e.ln("height: {}", _height);
-        e.deindent();
-    }
+    // decode() not needed — loadJpeg returns _surface directly
 };
 
 } // namespace Karm::Image::Jpeg

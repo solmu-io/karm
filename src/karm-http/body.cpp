@@ -45,10 +45,11 @@ export struct Body : Aio::Reader {
     static Rc<Body> from(Rc<Ref::Blob> blob) {
         struct BlobBody : Body {
             Rc<Ref::Blob> _blob;
-            Io::BufReader _reader{_blob->data};
+            Io::BufReader _reader;
 
             BlobBody(Rc<Ref::Blob> blob)
-                : _blob(std::move(blob)) {}
+                : _blob(std::move(blob)),
+                _reader(_blob->data) {}
 
             Async::Task<usize> readAsync(MutBytes buf, Async::CancellationToken) override {
                 co_return _reader.read(buf);
