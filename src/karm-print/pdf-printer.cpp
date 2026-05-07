@@ -22,7 +22,7 @@ export struct PdfPrinter : FilePrinter {
 
     Gfx::Canvas& beginPage(Math::Vec2f size) override {
         auto& page = _pages.emplaceBack(size);
-        _canvas = Pdf::Canvas{page.data, size, &fontManager, graphicalStates};
+        _canvas = Pdf::Canvas{page.data, size, &fontManager, &imageManager, graphicalStates};
 
         // Convert from the karm-pdf internal units to PDF units (1/72 inch)
         _canvas->scale(72.0 / DPI);
@@ -147,7 +147,8 @@ export struct PdfPrinter : FilePrinter {
 
             // Add all images to page resources
             Pdf::Dict pageImagesDict;
-            for (auto& [imageId, objRef] : imageId2ObjRef._els) {
+            for (auto& [imageId, objRef] : imageId2ObjRef) {
+
                 auto formattedName = Io::format("Im{}", imageId);
                 pageImagesDict.put(formattedName.str(), objRef);
             }
@@ -172,8 +173,8 @@ export struct PdfPrinter : FilePrinter {
                          usize{0},
                          usize{0},
                          // Convert from the karm-pdf internal units to PDF units (1/72 inch)
-                         p.paper.width * (72.0 / DPI),
-                         p.paper.height * (72.0 / DPI),
+                         p.size.width * (72.0 / DPI),
+                         p.size.height * (72.0 / DPI),
                      }},
                     {
                         "Contents"s,
