@@ -9,23 +9,22 @@ import Mdi;
 
 namespace Karm::Kira {
 
-export Ui::Child searchbar(String text) {
+export Ui::Child searchbar(String text, Ui::Send<String> onChange = Ui::SINK<String>) {
     return Ui::hflow(
                8,
                Math::Align::VCENTER | Math::Align::START,
                Ui::stack(
                    text ? Ui::empty() : Ui::labelMedium(Ui::GRAY600, "Search…"),
-                   Ui::input(Ui::TextStyles::labelMedium(), text, Ui::SINK<String>)
+                   Ui::input(Ui::TextStyles::labelMedium(), text, onChange)
                ) | Ui::grow(),
                Ui::icon(Mdi::MAGNIFY)
            ) |
            Ui::box({
                .padding = {6, 12, 6, 12},
                .borderRadii = 4,
-               .borderWidth = 1,
-               .borderFill = Ui::GRAY800,
+               .backgroundFill = Ui::GRAY800,
            }) |
-           Ui::minSize({Ui::UNCONSTRAINED, 36}) |
+           Ui::minSize({Ui::UNCONSTRAINED, 32}) |
            Ui::focusable() |
            Ui::keyboardShortcut(App::Key::F, App::KeyMod::CTRL);
 }

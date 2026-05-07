@@ -4,8 +4,11 @@ import Karm.Core;
 import Karm.Sys;
 import Karm.Logger;
 import Karm.Tty;
+import Karm.Glob;
 
 import :test;
+
+using namespace Karm::Literals;
 
 namespace Karm::Test {
 
@@ -96,7 +99,7 @@ export struct Driver {
     }
 
     Res<> unexpect(auto const& lhs, auto const& rhs, Str op, Loc loc = Loc::current()) {
-        logError({"unexpected: {#} {} {#}", loc}, lhs, op, rhs);
+        logError({"unexpected: {#} {} {#}"s, loc}, lhs, op, rhs);
         return Error::other("unexpected");
     }
 };

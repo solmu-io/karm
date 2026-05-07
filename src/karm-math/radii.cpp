@@ -4,6 +4,7 @@ import Karm.Core;
 
 import :insets;
 import :vec;
+import :au;
 
 namespace Karm::Math {
 
@@ -76,9 +77,9 @@ struct Radii {
     bool zero() const
         requires(Meta::Equatable<T>)
     {
-        return iter(radii).all([](T radii) {
-            return radii == T{};
-        });
+        return iter(radii) | All([](T radii) {
+                   return Math::epsilonEq(radii, static_cast<T>(0));
+               });
     }
 
     T all() const {
@@ -174,22 +175,23 @@ struct Radii {
         _e("(radii {} {} {} {} {} {} {} {})", a, b, c, d, e, f, g, h);
     }
 
-    constexpr auto map(auto f) const {
-        using U = decltype(f(a));
+    constexpr auto map(auto func) const {
+        using U = decltype(func(a));
         return Radii<U>{
-            f(a),
-            f(b),
-            f(c),
-            f(d),
-            f(e),
-            f(f),
-            f(g),
-            f(h),
+            func(a),
+            func(b),
+            func(c),
+            func(d),
+            func(e),
+            func(f),
+            func(g),
+            func(h),
         };
     }
 };
 
 export using Radiii = Radii<i64>;
 export using Radiif = Radii<f64>;
+export using RadiiAu = Radii<Au>;
 
 } // namespace Karm::Math

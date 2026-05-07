@@ -1,6 +1,9 @@
-#include <karm-test/macros.h>
+#include <karm/test>
 
 import Karm.Ref;
+
+using namespace Karm::Literals;
+using namespace Karm::Ref::Literals;
 
 namespace Karm::Ref::Tests {
 

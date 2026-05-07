@@ -1,10 +1,11 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.endian;
 
 import :base.slice;
+import :base.hash;
 
 namespace Karm {
 
@@ -28,6 +29,10 @@ struct [[gnu::packed]] Be {
     always_inline constexpr T value() const {
         return toBe(_value);
     }
+
+    always_inline void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, value());
+    }
 };
 
 export template <typename T>
@@ -50,6 +55,10 @@ struct [[gnu::packed]] Le {
 
     always_inline constexpr T value() const {
         return toLe(_value);
+    }
+
+    always_inline void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, value());
     }
 };
 

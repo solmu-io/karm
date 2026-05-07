@@ -1,10 +1,12 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Tty:style;
 
 import Karm.Core;
+
+using namespace Karm::Literals;
 
 namespace Karm::Tty {
 

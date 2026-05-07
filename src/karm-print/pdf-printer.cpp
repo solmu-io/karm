@@ -1,17 +1,15 @@
-module;
-
-#include <karm-font/ttf/fontface.h>
-
 export module Karm.Print:pdfPrinter;
 
+import Karm.Font.Ttf;
 import Karm.Pdf;
+
 import :filePrinter;
 import :pdfFonts;
 
 namespace Karm::Print {
 
 struct PdfPage {
-    PaperStock paper;
+    Math::Vec2f size;
     Io::StringWriter data;
 };
 
@@ -22,9 +20,9 @@ export struct PdfPrinter : FilePrinter {
     Pdf::ImageManager imageManager;
     Vec<Pdf::GraphicalStateDict> graphicalStates;
 
-    Gfx::Canvas& beginPage(PaperStock paper) override {
-        auto& page = _pages.emplaceBack(paper);
-        _canvas = Pdf::Canvas{page.data, paper.size(), &fontManager, &imageManager, graphicalStates};
+    Gfx::Canvas& beginPage(Math::Vec2f size) override {
+        auto& page = _pages.emplaceBack(size);
+        _canvas = Pdf::Canvas{page.data, size, &fontManager, graphicalStates};
 
         // Convert from the karm-pdf internal units to PDF units (1/72 inch)
         _canvas->scale(72.0 / DPI);
@@ -32,7 +30,7 @@ export struct PdfPrinter : FilePrinter {
         // NOTE: PDF has the coordinate system origin at the bottom left corner.
         //       But we want to have it at the top left corner.
         _canvas->transform(
-            {1, 0, 0, -1, 0, paper.height}
+            {1, 0, 0, -1, 0, size.height}
         );
 
         return *_canvas;
@@ -49,7 +47,7 @@ export struct PdfPrinter : FilePrinter {
 
         // Fonts
         Map<usize, Pdf::Ref> fontManagerId2FontObjRef;
-        for (auto& [_, value] : fontManager.mapping._els) {
+        for (auto const& [_, value] : fontManager.mapping.iterItems()) {
             auto& [id, fontFace] = value;
 
             if (not fontFace.is<Font::Ttf::Fontface>()) {
@@ -142,7 +140,7 @@ export struct PdfPrinter : FilePrinter {
 
             // FIXME: adding all fonts for now on each page; later, we will need to filter by page
             Pdf::Dict pageFontsDict;
-            for (auto& [managerId, objRef] : fontManagerId2FontObjRef._els) {
+            for (auto const& [managerId, objRef] : fontManagerId2FontObjRef.iterItems()) {
                 auto formattedName = Io::format("F{}", managerId);
                 pageFontsDict.put(formattedName.str(), objRef);
             }
@@ -225,11 +223,6 @@ export struct PdfPrinter : FilePrinter {
             {"Size"s, file.body.len() + 1},
             {"Root"s, catalogRef},
         };
-
-        // Sorting object by their refs, so they are printed in order
-        sort(file.body._els, [](auto& a, auto& b) {
-            return a.v0.num <=> b.v0.num;
-        });
 
         return file;
     }

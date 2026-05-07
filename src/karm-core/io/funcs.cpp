@@ -1,10 +1,11 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:io.funcs;
 
 import :base.ring;
+import :base.vec;
 import :io.impls;
 import :io.text;
 
@@ -29,6 +30,19 @@ export Res<String> readAllUtf8(Readable auto& reader) {
     while (true) {
         usize read = try$(reader.read(buf.mutBytes()));
         if (read == 0) {
+            break;
+        }
+        try$(writer.writeUnit({buf.buf(), read}));
+    }
+    return Ok(writer.take());
+}
+
+export Res<String> readLineUtf8(Readable auto& reader) {
+    StringWriter writer;
+    Array<Utf8::Unit, 1> buf;
+    while (true) {
+        auto read = try$(reader.read(buf.mutBytes()));
+        if (read == 0 or buf[0] == '\n') {
             break;
         }
         try$(writer.writeUnit({buf.buf(), read}));
@@ -80,7 +94,7 @@ export Res<usize> copy(Readable auto& reader, MutBytes bytes) {
 }
 
 export Res<usize> copy(Readable auto& reader, Writable auto& writer) {
-    Array<u8, 4096> buffer;
+    Array<u8, Io::DEFAULT_BUFFER_SIZE> buffer;
     usize result = 0;
     while (true) {
         auto read = try$(reader.read(mutBytes(buffer)));
@@ -96,7 +110,7 @@ export Res<usize> copy(Readable auto& reader, Writable auto& writer) {
 }
 
 export Res<usize> copy(Readable auto& reader, Writable auto& writer, usize size) {
-    Array<u8, 4096> buf;
+    Array<u8, Io::DEFAULT_BUFFER_SIZE> buf;
     usize result = 0;
     while (size > 0) {
         auto read = try$(reader.read(mutSub(buf, 0, size)));
@@ -112,6 +126,12 @@ export Res<usize> copy(Readable auto& reader, Writable auto& writer, usize size)
         size -= read;
     }
     return Ok(result);
+}
+
+export Res<Vec<u8>> readAll(Readable auto& reader) {
+    BufferWriter buf;
+    try$(Io::copy(reader, buf));
+    return Ok(buf.take());
 }
 
 export Res<Tuple<usize, bool>> readLine(Readable auto& reader, Writable auto& writer, Bytes delim) {

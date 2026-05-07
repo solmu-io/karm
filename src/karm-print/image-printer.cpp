@@ -20,8 +20,8 @@ export struct ImagePrinter : FilePrinter {
         : _density(density),
           _saver(saver) {}
 
-    Gfx::Canvas& beginPage(PaperStock paper) override {
-        _pages.emplaceBack(Gfx::Surface::alloc(paper.size().cast<isize>() * _density, Gfx::RGBA8888));
+    Gfx::Canvas& beginPage(Math::Vec2f size) override {
+        _pages.emplaceBack(Gfx::Surface::alloc(size.cast<isize>() * _density, Gfx::RGBA8888));
 
         if (_canvas)
             _canvas->end();
@@ -42,19 +42,19 @@ export struct ImagePrinter : FilePrinter {
             return _pages[0];
 
         isize finalHeight =
-            iter(_pages)
-                .map([](auto& page) {
-                    return page->height() + GAPS;
-                })
-                .sum();
+            iter(_pages) |
+            Select([](auto& page) {
+                return page->height() + GAPS;
+            }) |
+            Sum();
         finalHeight -= GAPS;
 
         isize finalWidth =
-            iter(_pages)
-                .map([](auto& page) {
-                    return page->width();
-                })
-                .max()
+            (iter(_pages) |
+             Select([](auto& page) {
+                 return page->width();
+             }) |
+             Max())
                 .unwrapOr(0);
 
         auto finalImageSize = Math::Vec2i{

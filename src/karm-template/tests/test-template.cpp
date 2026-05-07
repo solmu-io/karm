@@ -1,7 +1,9 @@
-#include <karm-test/macros.h>
+#include <karm/test>
 
 import Karm.Core;
 import Karm.Template;
+
+using namespace Karm::Literals;
 
 namespace Karm::Template::Tests {
 

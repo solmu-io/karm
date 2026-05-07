@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.list;
 
@@ -70,7 +70,7 @@ struct Ll {
 
     T* detach(T* value) {
         if (not value) [[unlikely]]
-            panic("value connot be null");
+            panic("cannot detache null");
 
         if (prev(value))
             next(prev(value)) = next(value);
@@ -94,7 +94,7 @@ struct Ll {
 
     T* append(T* value, T* after) {
         if (not value) [[unlikely]]
-            panic("value connot be null");
+            panic("cannot append null");
 
         if (value == after) [[unlikely]]
             panic("cannot append a node to itself");
@@ -345,26 +345,38 @@ struct List {
 
     template <typename Self>
     static auto _iter(Self* self) {
-        return Iter([curr = self->_ll.head()] mutable -> T* {
-            if (curr) {
-                auto& ret = curr->value;
-                curr = curr->item.next;
-                return &ret;
+        struct Iter {
+            Item* curr;
+
+            auto next() -> T* {
+                if (curr) {
+                    auto& ret = curr->value;
+                    curr = curr->item.next;
+                    return &ret;
+                }
+                return nullptr;
             }
-            return nullptr;
-        });
+        };
+
+        return Iter{self->_ll.head()};
     }
 
     template <typename Self>
     static auto _iterRev(Self* self) {
-        return Iter([curr = self->_ll.tail()] mutable -> T* {
-            if (curr) {
-                auto& ret = curr->value;
-                curr = curr->item.prev;
-                return &ret;
+        struct Iter {
+            Item* curr;
+
+            auto next() -> T* {
+                if (curr) {
+                    auto& ret = curr->value;
+                    curr = curr->item.prev;
+                    return &ret;
+                }
+                return nullptr;
             }
-            return nullptr;
-        });
+        };
+
+        return Iter{self->_ll.tail()};
     }
 
     constexpr auto iter() {

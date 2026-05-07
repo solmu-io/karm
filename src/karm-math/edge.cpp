@@ -56,8 +56,16 @@ union Edge {
         return epsilonEq(start, end, epsilon);
     }
 
-    constexpr Vec<T> delta() const {
+    constexpr Vec2<T> delta() const {
         return {end.x - start.x, end.y - start.y};
+    }
+
+    constexpr T top() const {
+        return start.y < end.y ? start.y : end.y;
+    }
+
+    constexpr T bottom() const {
+        return start.y > end.y ? start.y : end.y;
     }
 
     constexpr Rect<T> bound() const {

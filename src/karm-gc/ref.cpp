@@ -51,6 +51,10 @@ struct Ref {
     bool operator==(Ref const& other) const {
         return _ptr == other._ptr;
     }
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, (usize)_ptr);
+    }
 };
 
 template <typename T>

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Sys:launch;
 
@@ -22,7 +22,7 @@ export struct Object {
 
 export struct Intent {
     Ref::Uti action;
-    Vec<Object> objects;
+    Vec<Object> objects = {};
     Opt<Ref::Url> handler = NONE;
     Opt<Ref::Url> callback = NONE;
 };

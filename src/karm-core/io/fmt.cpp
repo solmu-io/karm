@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:io.fmt;
 
@@ -16,6 +16,7 @@ import :base.vec;
 import :io.aton;
 import :io.sscan;
 import :io.text;
+import :base.size;
 
 namespace Karm::Io {
 
@@ -68,15 +69,30 @@ export Res<> _format(TextWriter& writer, Str format, _Args& args) {
         Rune c = scan.next();
 
         if (c == '{') {
+            if (scan.peek() == '{') {
+                scan.next();
+                try$(writer.writeRune('{'));
+                continue;
+            }
+
             scan.skip(':');
             scan.begin();
-            while (scan.peek() != '}') {
+            while (scan.peek() != '}' and not scan.ended()) {
                 scan.next();
             }
+            if (scan.ended())
+                return Error::invalidData("unmatched '{'");
             scan.next();
             SScan inner{scan.end()};
             try$(args.format(inner, writer, index));
             index++;
+        } else if (c == '}') {
+            if (scan.peek() == '}') {
+                scan.next();
+                try$(writer.writeRune('}'));
+                continue;
+            }
+            return Error::invalidData("unmatched '}'");
         } else {
             try$(writer.writeRune(c));
         }
@@ -208,6 +224,7 @@ struct Formatter<Aligned<T>> {
 export struct NumberFormatter {
     bool prefix = false;
     bool isChar = false;
+    bool uppercase = false;
     usize base = 10;
     usize width = 0;
     char fillChar = ' ';
@@ -244,7 +261,7 @@ export struct NumberFormatter {
         if (s.skip('.')) {
             if (s.skip('0'))
                 trailingZeros = true;
-            precision = atoi(s).unwrapOrDefault(6);
+            precision = atoi(s).unwrapOr(6);
         }
 
         if (s.ended())
@@ -267,11 +284,24 @@ export struct NumberFormatter {
             base = 16;
             break;
 
+        case 'X':
+            base = 16;
+            uppercase = true;
+            break;
+
         case 'p':
             prefix = true;
             base = 16;
             fillChar = '0';
             width = sizeof(usize) * 2;
+            break;
+
+        case 'P':
+            prefix = true;
+            base = 16;
+            fillChar = '0';
+            width = sizeof(usize) * 2;
+            uppercase = true;
             break;
 
         case 'c':
@@ -284,10 +314,10 @@ export struct NumberFormatter {
     }
 
     Res<> formatUnsigned(TextWriter& writer, usize val) {
-        auto digit = [](usize v) {
+        auto digit = [&](usize v) {
             if (v < 10)
                 return '0' + v;
-            return 'a' + (v - 10);
+            return (uppercase ? 'A' : 'a') + (v - 10);
         };
 
         InlineVec<char, 128> buf;
@@ -442,6 +472,22 @@ struct Formatter<T> {
     }
 };
 
+// MARK: Format Locations ------------------------------------------------------
+
+export template <>
+struct Formatter<Loc> {
+    Res<> format(TextWriter& writer, Loc const& val) {
+        return Io::format(writer, "{}:{}", val.line, val.col);
+    }
+};
+
+export template <>
+struct Formatter<LocSpan> {
+    Res<> format(TextWriter& writer, LocSpan const& val) {
+        return Io::format(writer, "{}-{}", val.start, val.end);
+    }
+};
+
 // MARK: Format Pointers -------------------------------------------------------
 
 export template <typename T>
@@ -541,8 +587,11 @@ struct Formatter<Ok<T>> {
 export template <>
 struct Formatter<Error> {
     Res<> format(TextWriter& writer, Error const& val) {
-        Str msg = Str::fromNullterminated(val.msg());
-        try$(writer.writeStr(msg));
+        try$(writer.writeStr(val.msg()));
+        if (val.cause()) {
+            try$(writer.writeStr(": "s));
+            try$(format(writer, val.cause().unwrap()));
+        }
         return Ok();
     }
 };
@@ -765,7 +814,7 @@ struct Formatter<Map<K, V>> {
     Res<> format(TextWriter& writer, Map<K, V> const& val) {
         try$(writer.writeStr("{"s));
         bool first = true;
-        for (auto const& [key, value] : val.iterUnordered()) {
+        for (auto const& [key, value] : val.iterItems()) {
             if (not first)
                 try$(writer.writeStr(", "s));
             first = false;
@@ -958,4 +1007,36 @@ struct Formatter<Tuple<Ts...>> {
     }
 };
 
+export template <>
+struct Formatter<DataSize> {
+    Res<> format(TextWriter& writer, DataSize const& val) {
+        if (auto size = val.toTiB(); size > 0)
+            return Io::format(writer, "{}TiB", size);
+        if (auto size = val.toGiB(); size > 0)
+            return Io::format(writer, "{}GiB", size);
+        if (auto size = val.toMiB(); size > 0)
+            return Io::format(writer, "{}MiB", size);
+        if (auto size = val.toKiB(); size > 0)
+            return Io::format(writer, "{}KiB", size);
+        return Io::format(writer, "{}B", val.toB());
+    }
+};
+
+export struct FStr {
+    Str _fmt;
+
+    template <typename... Ts>
+    String operator()(Ts&&... ts) const {
+        return format(_fmt, std::forward<Ts>(ts)...);
+    }
+};
+
 } // namespace Karm::Io
+
+namespace Karm::Fmt::Literals {
+
+export constexpr Karm::Io::FStr operator""_f(char const* buf, Karm::usize len) {
+    return {Karm::Str{buf, len}};
+}
+
+} // namespace Karm::Fmt::Literals

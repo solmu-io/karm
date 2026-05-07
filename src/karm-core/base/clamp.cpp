@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.clamp;
 
@@ -37,6 +37,14 @@ export always_inline constexpr auto clamp(auto value, auto min, auto max) {
            : value > max
                ? max
                : value;
+}
+
+/// Clamps an index to the range [0, length - 1].
+export template <typename T>
+always_inline constexpr T clampIndex(T value, T len) {
+    if (len == 0)
+        return 0;
+    return clamp(value, (T)0, len - 1);
 }
 
 /// Clamps a value to the range [0, 1].

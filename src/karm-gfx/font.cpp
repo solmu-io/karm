@@ -4,6 +4,8 @@ import Karm.Core;
 import Karm.Math;
 import Karm.Logger;
 
+using namespace Karm::Literals;
+
 namespace Karm::Gfx {
 
 export struct Canvas;
@@ -13,6 +15,11 @@ export struct Glyph {
     u16 font;
 
     static Glyph const TOFU;
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, index);
+        Karm::hash(h, font);
+    }
 
     bool operator==(Glyph const& other) const = default;
 
@@ -246,6 +253,14 @@ export struct FontAttrs {
                monospace == Monospace::NO;
     }
 
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, family);
+        Karm::hash(h, weight);
+        Karm::hash(h, stretch);
+        Karm::hash(h, style);
+        Karm::hash(h, monospace);
+    }
+
     bool operator==(FontAttrs const&) const = default;
 
     auto operator<=>(FontAttrs const& other) const {
@@ -340,15 +355,15 @@ export struct Fontface {
 
     virtual ~Fontface() = default;
 
-    virtual FontMetrics metrics() = 0;
+    virtual FontMetrics metrics() const = 0;
 
     virtual FontAttrs attrs() const = 0;
 
-    virtual Glyph glyph(Rune rune) = 0;
+    virtual Glyph glyph(Rune rune) const = 0;
 
-    virtual f64 advance(Glyph glyph) = 0;
+    virtual f64 advance(Glyph glyph) const = 0;
 
-    virtual f64 kern(Glyph prev, Glyph curr) = 0;
+    virtual f64 kern(Glyph prev, Glyph curr) const = 0;
 
     virtual void contour(Canvas& g, Glyph glyph) const = 0;
 };
@@ -383,7 +398,7 @@ export struct FontFamily : Fontface {
 
     FontFamily(Vec<Member> members) : _members(std::move(members)) {}
 
-    FontMetrics metrics() override {
+    FontMetrics metrics() const override {
         FontMetrics metrics = {};
 
         for (auto& member : _members) {
@@ -415,7 +430,7 @@ export struct FontFamily : Fontface {
         return attrs;
     }
 
-    Glyph glyph(Rune rune) override {
+    Glyph glyph(Rune rune) const override {
         Glyph res = Glyph::TOFU;
 
         for (usize i = 0; i < _members.len(); i++) {
@@ -437,13 +452,13 @@ export struct FontFamily : Fontface {
         return res;
     }
 
-    f64 advance(Glyph glyph) override {
+    f64 advance(Glyph glyph) const override {
         auto& member = _members[glyph.font];
         auto a = member.face->advance(glyph);
         return a * member.adjust.sizeAdjust * _adjust.sizeAdjust;
     }
 
-    f64 kern(Glyph prev, Glyph curr) override {
+    f64 kern(Glyph prev, Glyph curr) const override {
         if (prev.font != curr.font)
             return 0;
 
@@ -464,7 +479,7 @@ export struct Font {
 
     static Font fallback();
 
-    FontMetrics metrics() {
+    FontMetrics metrics() const {
         auto m = fontface->metrics();
 
         m.advance *= fontsize;
@@ -479,19 +494,19 @@ export struct Font {
         return m;
     }
 
-    Glyph glyph(Rune rune) {
+    Glyph glyph(Rune rune) const {
         return fontface->glyph(rune);
     }
 
-    f64 advance(Glyph glyph) {
+    f64 advance(Glyph glyph) const {
         return fontface->advance(glyph) * fontsize;
     }
 
-    f64 kern(Glyph prev, Glyph curr) {
+    f64 kern(Glyph prev, Glyph curr) const {
         return fontface->kern(prev, curr) * fontsize;
     }
 
-    FontMeasure measure(Glyph glyph) {
+    FontMeasure measure(Glyph glyph) const {
         auto m = metrics();
         auto adv = advance(glyph);
 
@@ -502,28 +517,28 @@ export struct Font {
         };
     }
 
-    void contour(Canvas& g, Glyph glyph);
+    void contour(Canvas& g, Glyph glyph) const;
 
     // Metrics
 
-    f64 fontSize() {
+    f64 fontSize() const {
         return fontsize;
     }
 
-    f64 xHeight() {
+    f64 xHeight() const {
         // FIXME: capbound height as it is here is a font metric, not a glyph metric
         return measure(glyph('x')).capbound.height;
     }
 
-    f64 capHeight() {
+    f64 capHeight() const {
         return measure(glyph('H')).capbound.height;
     }
 
-    f64 zeroAdvance() {
+    f64 zeroAdvance() const {
         return advance(glyph('0'));
     }
 
-    f64 lineHeight() {
+    f64 lineHeight() const {
         return metrics().lineheight();
     }
 };

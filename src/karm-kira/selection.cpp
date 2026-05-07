@@ -10,7 +10,7 @@ namespace Karm::Kira {
 
 struct SelectionSet {
     bool _all = false;
-    Set<Ui::Key> _keys = {};
+    Set<Ui::Key> _keys{};
 
     static SelectionSet all() {
         return {
@@ -22,6 +22,15 @@ struct SelectionSet {
 struct SelectionUpdateEvent {
     Math::Recti rect;
 };
+
+export void paintSelection(Gfx::Canvas& g, Math::Rectf selection) {
+    g.push();
+    g.fillStyle(Ui::ACCENT500.withOpacity(0.25));
+    g.fill(selection, 6);
+    g.strokeStyle({Ui::ACCENT500, 1, Gfx::INSIDE_ALIGN});
+    g.stroke(selection, 6);
+    g.pop();
+}
 
 struct SelectionArea : Ui::ProxyNode<SelectionArea> {
     Ui::MouseListener _listener;
@@ -38,14 +47,9 @@ struct SelectionArea : Ui::ProxyNode<SelectionArea> {
 
     void paint(Gfx::Canvas& g, Math::Recti r) override {
         ProxyNode::paint(g, r);
-        
+
         if (_selecting) {
-            g.push();
-            g.fillStyle(Ui::ACCENT500.withOpacity(0.25));
-            g.fill(selectionRect(), 6);
-            g.strokeStyle({Ui::ACCENT500, 1, Gfx::INSIDE_ALIGN});
-            g.stroke(selectionRect().cast<f64>(), 6);
-            g.pop();
+            paintSelection(g, selectionRect().cast<f64>());
         }
     }
 
@@ -59,6 +63,7 @@ struct SelectionArea : Ui::ProxyNode<SelectionArea> {
                 if (mouseEvent->type == App::MouseEvent::RELEASE and
                     mouseEvent->button == App::MouseButton::LEFT) {
                     _selecting = false;
+                    Ui::shouldRepaint(*this, selectionRect().clipTo(bound()));
                     e.accept();
                 }
 
@@ -101,10 +106,11 @@ struct SelectionItem : Ui::ProxyNode<SelectionItem> {
 
     void event(App::Event& e) override {
         if (auto selectionEvent = e.is<SelectionUpdateEvent>()) {
-            if (selectionEvent->rect.colide(bound()))
-                _selected = true;
-            else
-                _selected = false;
+            bool const newSelected = selectionEvent->rect.colide(bound());
+            if (_selected != newSelected) {
+                _selected = newSelected;
+                Ui::shouldRepaint(*this);
+            }
             return;
         }
 

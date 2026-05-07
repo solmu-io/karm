@@ -46,6 +46,9 @@ export struct TextAction {
         CUT,
         PASTE,
 
+        MOVE_TO,
+        SELECT_TO,
+
         UNDO,
         REDO,
 
@@ -54,13 +57,24 @@ export struct TextAction {
 
     _Op op;
     Rune rune = {};
+    usize pos = {};
 
     TextAction(_Op op, Rune rune = 0) : op(op), rune(rune) {}
 
+    static TextAction moveTo(usize pos) {
+        TextAction a{MOVE_TO};
+        a.pos = pos;
+        return a;
+    }
+
+    static TextAction selectTo(usize pos) {
+        TextAction a{SELECT_TO};
+        a.pos = pos;
+        return a;
+    }
+
     static Opt<TextAction> fromEvent(App::Event& e) {
-        if (auto te = e.is<App::TypeEvent>()) {
-            return TextAction{TYPE, te->rune};
-        } else if (
+        if (
             auto ke = e.is<App::KeyboardEvent>();
             ke and (ke->type == App::KeyboardEvent::PRESS or ke->type == App::KeyboardEvent::REPEATE)
         ) {
@@ -136,6 +150,8 @@ export struct TextAction {
                 return BACKSPACE;
             else if (ke->key == App::Key::DELETE and optionalyShift)
                 return DELETE;
+            else if (ke->rune)
+                return TextAction{TYPE, ke->rune};
         }
 
         return NONE;
@@ -377,6 +393,17 @@ export struct TextModel {
 
     usize _textEnd(usize = 0) const {
         return _buf.len();
+    }
+
+    // MARK: Cursor API -------------------------------------------------------
+
+    void setCursor(usize pos) {
+        _cur.head = min(pos, _buf.len());
+        _cur.tail = _cur.head;
+    }
+
+    void setSelectionEnd(usize pos) {
+        _cur.head = min(pos, _buf.len());
     }
 
     // MARK: Commands
@@ -665,6 +692,14 @@ export struct TextModel {
 
         case TextAction::SELECT_ALL:
             selectAll();
+            break;
+
+        case TextAction::MOVE_TO:
+            _moveTo(a.pos);
+            break;
+
+        case TextAction::SELECT_TO:
+            _selectTo(a.pos);
             break;
 
         case TextAction::UNDO:

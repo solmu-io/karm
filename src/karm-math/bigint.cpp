@@ -686,6 +686,8 @@ export struct BigFrac {
 
 } // namespace Karm::Math
 
+namespace Karm::Math::Literals {
+
 export Karm::Math::UBig operator""_ubig(unsigned long long value) {
     return Karm::Math::UBig{static_cast<Karm::usize>(value)};
 }
@@ -698,6 +700,10 @@ export Karm::Math::BigFrac operator""_bigfrac(unsigned long long value) {
     return Karm::Math::BigFrac{static_cast<Karm::usize>(value)};
 }
 
-export Karm::Math::BigFrac operator""_bigfrac(long double value) {
-    return Karm::Math::BigFrac{static_cast<Karm::f64>(value)};
-}
+// NOTE: Most target don't like long double literals, so we disable them
+//       for now. We can re-enable them later when we have a better solution for cross-compilation.
+// export Karm::Math::BigFrac operator""_bigfrac(long double value) {
+//     return Karm::Math::BigFrac{static_cast<Karm::f64>(value)};
+// }
+
+} // namespace Karm::Math::Literals

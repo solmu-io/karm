@@ -1,10 +1,12 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Idl:parser;
 
 import :ast;
+
+using namespace Karm::Re::Literals;
 
 namespace Karm::Idl {
 

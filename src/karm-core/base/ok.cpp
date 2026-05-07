@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.ok;
 
@@ -84,6 +84,9 @@ struct Ok<T&> {
         return *_inner;
     }
 };
+
+export template <typename T>
+Ok(T&) -> Ok<T&>;
 
 export template <typename T>
 Ok(T&&) -> Ok<Meta::RemoveConstVolatileRef<T>>;

@@ -1,10 +1,11 @@
-module;
-
-#include <karm-font/ttf/fontface.h>
-
 export module Karm.Print:pdfFonts;
 
+import Karm.Font.Ttf;
 import Karm.Pdf;
+import Karm.Core;
+import Karm.Gfx;
+
+using namespace Karm::Literals;
 
 namespace Karm::Print {
 
@@ -87,8 +88,8 @@ export struct TtfGlyphInfoAdapter {
         return allWidths;
     }
 
-    Buf<u8> CIDToGIDMap() {
-        Buf<u8> buf;
+    Vec<u8> CIDToGIDMap() {
+        Vec<u8> buf;
         buf.ensure(CODESPACE * 2);
 
         u16 const BYTE_MASK = 255;

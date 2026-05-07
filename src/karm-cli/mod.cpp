@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Cli;
 
@@ -8,6 +8,9 @@ import Karm.Core;
 import Karm.Debug;
 import Karm.Sys;
 import Karm.Ref;
+
+using namespace Karm::Literals;
+using namespace Karm::Re::Literals;
 
 namespace Karm::Cli {
 
@@ -30,7 +33,7 @@ export struct Token {
     Str value = "";
 
     Token(Str value)
-        : Token(Kind::OPERAND, value) {}
+        : Token(OPERAND, value) {}
 
     Token(Kind kind, Str value)
         : kind(kind), value(value) {}
@@ -39,12 +42,12 @@ export struct Token {
         : kind(kind) {}
 
     Token(Rune flag)
-        : kind(Kind::FLAG), flag(flag) {}
+        : kind(FLAG), flag(flag) {}
 
     bool operator==(Token const& other) const = default;
 
     void repr(Io::Emit& e) const {
-        if (kind == Kind::FLAG)
+        if (kind == FLAG)
             e("(token {} {#c})", kind, flag);
         else
             e("(token {} {#})", kind, value);
@@ -144,6 +147,44 @@ struct ValueParser<isize> {
 };
 
 export template <>
+struct ValueParser<DataSize> {
+    static Res<> usage(Io::TextWriter& w) {
+        return w.writeStr("size"s);
+    }
+
+    static Res<DataSize> parse(Cursor<Token>& c) {
+        if (c.ended() or c->kind != Token::OPERAND)
+            return Error::other("missing value");
+
+        Io::SScan scan = c.next().value;
+
+        auto result = Io::atoi(scan);
+        if (not result)
+            return Error::other("expected integer");
+
+        auto s = scan.remStr();
+        auto val = result.unwrap();
+
+        if (s == "TiB" or s == "T")
+            return Ok(DataSize::fromTiB(val));
+
+        if (s == "GiB" or s == "G")
+            return Ok(DataSize::fromGiB(val));
+
+        if (s == "MiB" or s == "M")
+            return Ok(DataSize::fromMiB(val));
+
+        if (s == "KiB" or s == "K")
+            return Ok(DataSize::fromKiB(val));
+
+        if (s == "B" or s == "")
+            return Ok(DataSize(val));
+
+        return Error::invalidInput("unknown unit");
+    }
+};
+
+export template <>
 struct ValueParser<Str> {
     static Res<> usage(Io::TextWriter& w) {
         return w.writeStr("string"s);
@@ -195,7 +236,7 @@ struct ValueParser<Ref::Uti> {
         if (c.ended() or c->kind != Token::OPERAND)
             return Error::other("expected uti");
 
-        return Ok(Ref::Uti{c.next().value});
+        return Ok(Ref::Uti::fromUtiOrMime(c.next().value));
     }
 };
 
@@ -223,7 +264,7 @@ struct ValueParser<Ref::Url> {
         if (c.ended() or c->kind != Token::OPERAND)
             return Error::other("expected url");
 
-        return Ok(Ref::parseUrlOrPath(c.next().value, try$(Sys::pwd())));
+        return Ok(Ref::parseUrlOrPath(c.next().value, Sys::globalEnv().cwd()));
     }
 };
 
@@ -422,12 +463,11 @@ export struct Section {
 };
 
 export struct Command : Meta::Pinned {
-    using Callback = Func<Async::Task<>(Sys::Context&)>;
+    using Callback = Func<Async::Task<>(Sys::Env&)>;
 
     String _longName;
     String _description = ""s;
     Vec<Section> _sections;
-    Opt<Callback> _callbackAsync;
 
     Vec<Rc<Command>> _commands;
     Command* _parent = nullptr;
@@ -454,13 +494,11 @@ export struct Command : Meta::Pinned {
     Command(
         String longName,
         String description = ""s,
-        Vec<Section> sections = {},
-        Opt<Callback> callbackAsync = NONE
+        Vec<Section> sections = {}
     )
         : _longName(std::move(longName)),
           _description(std::move(description)),
-          _sections(std::move(sections)),
-          _callbackAsync(std::move(callbackAsync)) {
+          _sections(std::move(sections)) {
 
         _sections.pushFront({
             .title = "Common Options"s,
@@ -483,14 +521,12 @@ export struct Command : Meta::Pinned {
     Command& subCommand(
         String longName,
         String description = ""s,
-        Vec<Section> sections = {},
-        Opt<Callback> callbackAsync = NONE
+        Vec<Section> sections = {}
     ) {
         auto cmd = makeRc<Command>(
             longName,
             description,
-            sections,
-            std::move(callbackAsync)
+            sections
         );
         cmd->_parent = this;
         _commands.pushBack(cmd);
@@ -560,9 +596,7 @@ export struct Command : Meta::Pinned {
                 Io::Emit e{w};
                 e.indent();
                 if (sec.prolog) {
-                    e("{}", sec.prolog);
-                    try$(e.flush());
-                    try$(w.writeRune('\n'));
+                    e("{}\n", sec.prolog);
                 }
 
                 if (sec.options) {
@@ -576,14 +610,13 @@ export struct Command : Meta::Pinned {
 
                         try$(format(w, "--{} - {}\n", opt->longName, opt->description));
                     }
-                    try$(w.writeRune('\n'));
                 }
 
-                if (sec.epilog) {
-                    e("{}", sec.epilog);
-                    try$(e.flush());
-                    try$(w.writeRune('\n'));
-                }
+                if (sec.epilog)
+                    e("{}\n", sec.epilog);
+
+                try$(e.flush());
+                try$(w.writeRune('\n'));
             }
         }
 
@@ -643,21 +676,21 @@ export struct Command : Meta::Pinned {
         return Ok();
     }
 
-    Async::Task<> execAsync(Sys::Context& ctx) {
-        auto args = Sys::useArgs(ctx);
+    Async::Task<> execAsync(Sys::Env& env) {
+        auto& args = env.args();
         Vec<Token> tokens;
         for (usize i = 0; i < args.len(); ++i)
             tokenize(args[i], tokens);
-        co_return co_await execAsync(ctx, tokens);
+        co_return co_await execAsync(tokens);
     }
 
-    Async::Task<> execAsync(Sys::Context& ctx, Slice<Str> args) {
+    Async::Task<> execAsync(Slice<Str> args) {
         Vec<Token> tokens;
         tokenize(args, tokens);
-        co_return co_await execAsync(ctx, tokens);
+        co_return co_await execAsync(tokens);
     }
 
-    Async::Task<> execAsync(Sys::Context& ctx, Cursor<Token> c) {
+    Async::Task<> execAsync(Cursor<Token> c) {
         co_try$(_parseParams(c));
 
         if (_help.value()) {
@@ -684,8 +717,6 @@ export struct Command : Meta::Pinned {
         }
 
         _invoked = true;
-        if (_callbackAsync)
-            co_trya$(_callbackAsync.unwrap()(ctx));
 
         if (Karm::any(_commands) and c.ended()) {
             co_try$(_showUsage(Sys::out()));
@@ -705,7 +736,7 @@ export struct Command : Meta::Pinned {
             for (auto& cmd : _commands) {
                 if (value != cmd->_longName)
                     continue;
-                co_return co_await cmd->execAsync(ctx, c);
+                co_return co_await cmd->execAsync(c);
             }
 
             co_return Error::invalidInput("unknown subcommand");

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:serde.value;
 
@@ -67,6 +67,10 @@ export struct Value {
 
     Value(Meta::Boolean auto const& b)
         : _store(b) {}
+
+    template <typename T>
+    Value(Opt<T> const& o)
+        : Value(o ? Value(*o) : Value()) {}
 
     Value& operator=(None) {
         _store = NONE;
@@ -258,20 +262,20 @@ export struct Value {
     Value get(Str key) const {
         if (not isObject())
             return NONE;
-        return try$(asObject().tryGet(key));
+        return try$(asObject().lookup(key));
     }
 
     bool has(Str key) const {
         if (not isObject())
             return false;
-        return asObject().has(key);
+        return asObject().contains(key);
     }
 
     Value getOr(Str key, Value const& def) const {
         if (not isObject())
             return def;
         return asObject()
-            .tryGet(key)
+            .lookup(key)
             .unwrapOr(def);
     }
 
@@ -336,6 +340,10 @@ export struct Value {
     template <Meta::Equatable<_Store> T>
     bool operator==(T const& other) const {
         return _store == other;
+    }
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        _store.hash(h);
     }
 
     operator bool() const {

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Archive:zlib;
 
@@ -9,6 +9,8 @@ import Karm.Debug;
 import Karm.Logger;
 
 import :flate;
+
+using namespace Karm::Literals;
 
 namespace Karm::Archive {
 

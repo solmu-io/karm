@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:io.bscan;
 
@@ -218,6 +218,10 @@ export struct BScan {
         _bitsLen = 0;
     }
 
+    always_inline constexpr void align(usize n) {
+        skip((n - (tell() % n)) % n);
+    }
+
     /// Read bits in most significant bit first order.
     always_inline constexpr u8 nextBitbe() {
         if (_bitsLen == 0) {
@@ -365,9 +369,9 @@ export struct BScan {
         return s;
     }
 
-    always_inline constexpr Str nextCStr() {
+    always_inline constexpr Str nextCStr(usize len = Limits<usize>::MAX) {
         usize n = 0;
-        while (n < rem() and _cursor.buf()[n] != '\0') {
+        while (n < rem() and n < len and _cursor.buf()[n] != '\0') {
             n++;
         }
         auto res = nextStr(n);
@@ -424,7 +428,7 @@ export struct BChunk {
     }
 
     template <typename T>
-    always_inline constexpr typename T::Type get() const {
+    always_inline constexpr T::Type get() const {
         typename T::Type r{};
         begin()
             .skip(T::offset)
@@ -439,7 +443,7 @@ export struct BEmit {
     always_inline constexpr BEmit(Io::Writer& writer)
         : _writer(writer) {}
 
-    template <Meta::TrivialyCopyable T>
+    template <Meta::TriviallyCopyable T>
     always_inline constexpr void writeFrom(T const& v) {
         (void)_writer.write(Bytes{(u8 const*)&v, sizeof(v)});
     }

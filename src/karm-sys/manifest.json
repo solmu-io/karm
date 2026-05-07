@@ -3,10 +3,14 @@
     "id": "karm-sys",
     "type": "lib",
     "description": "System-dependent system abstraction",
+    "props": {
+        "export-headers": "includes"
+    },
     "requires": [
         "karm-sys.impl",
         "karm-sys.async",
         "karm-sys.sandbox",
+        "karm-sys.base",
         "karm-ref",
         "karm-core",
         "karm-logger"

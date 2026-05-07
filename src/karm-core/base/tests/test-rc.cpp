@@ -1,6 +1,6 @@
 import Karm.Core;
 
-#include <karm-test/macros.h>
+#include <karm/test>
 
 namespace Karm::Base::Tests {
 
@@ -49,6 +49,18 @@ test$("rc-niche") {
     expectEq$(test, NONE);
     test = makeRc<int>();
     expectEq$(test.has(), true);
+
+    return Ok();
+}
+
+test$("rc-same-instance") {
+    auto a = makeRc(1);
+    auto b = makeRc(1);
+    auto c = a;
+
+    expect$(a.sameInstance(c));
+    expect$(not a.sameInstance(b));
+    expect$(not c.sameInstance(b));
 
     return Ok();
 }

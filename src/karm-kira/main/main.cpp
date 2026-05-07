@@ -1,14 +1,15 @@
-#include <karm-sys/entry.h>
+#include <karm/entry>
 
 import Mdi;
 import Karm.Ui;
 import Karm.Kira;
 
 using namespace Karm;
+using namespace Karm::Literals;
 
-Async::Task<> entryPointAsync(Sys::Context& ctx, Async::CancellationToken ct) {
+Async::Task<> entryPointAsync(Sys::Env& env, Async::CancellationToken ct) {
     co_return co_await Ui::runAsync(
-        ctx,
+        env,
         Kr::scaffold({
             .icon = Mdi::DUCK,
             .title = "Kira Application"s,

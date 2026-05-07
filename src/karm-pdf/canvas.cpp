@@ -6,6 +6,8 @@ import Karm.Gfx;
 import Karm.Math;
 import Karm.Logger;
 
+using namespace Karm::Literals;
+
 namespace Karm::Pdf {
 
 static auto debugCanvas = Debug::Flag::debug("pdf-canvas", "Log PDF canvas failures");
@@ -14,11 +16,11 @@ export struct FontManager {
     Map<Gfx::FontAttrs, Tuple<usize, Rc<Gfx::Fontface>>> mapping;
 
     usize getFontId(Rc<Gfx::Fontface> font) {
-        if (auto id = mapping.tryGet(font->attrs()))
+        if (auto id = mapping.lookup(font->attrs()))
             return id.unwrap().v0;
 
         auto id = mapping.len() + 1;
-        mapping.put(font->attrs(), {id, font});
+        mapping.put(font->attrs(), Tuple{id, font});
         return id;
     }
 };
@@ -123,14 +125,23 @@ export struct Canvas : Gfx::Canvas {
     void fillStyle(Gfx::Fill fill) override {
         auto color = fill.unwrap<Gfx::Color>();
 
-        if (color.alpha == 255) {
-            _e.ln("{:.3} {:.3} {:.3} rg", color.red / 255.0, color.green / 255.0, color.blue / 255.0);
-            return;
+        _e.ln("{:.3} {:.3} {:.3} rg", color.red / 255.0, color.green / 255.0, color.blue / 255.0);
+
+        f64 targetOpacity = color.alpha / 255.0;
+
+        usize gsIndex = _graphicalStates.len();
+        for (usize i = 0; i < _graphicalStates.len(); ++i) {
+            if (Math::epsilonEq(_graphicalStates[i].opacity, targetOpacity, 0.001)) {
+                gsIndex = i;
+                break;
+            }
         }
 
-        _e.ln("/GS{} gs", _graphicalStates.len());
-        _e.ln("{:.3} {:.3} {:.3} rg", color.red / 255.0, color.green / 255.0, color.blue / 255.0);
-        _graphicalStates.pushBack(GraphicalStateDict{color.alpha / 255.0});
+        if (gsIndex == _graphicalStates.len()) {
+            _graphicalStates.pushBack(GraphicalStateDict{targetOpacity});
+        }
+
+        _e.ln("/GS{} gs", gsIndex);
     }
 
     void strokeStyle(Gfx::Stroke) override {
@@ -229,20 +240,19 @@ export struct Canvas : Gfx::Canvas {
 
     void fill(Gfx::Prose& prose) override {
         push();
+
+        if (prose._style.color) {
+            fillStyle(*prose._style.color);
+        }
+
         _e.ln("BT");
+
+        f64 fontSize = prose._style.font.fontSize();
         _e.ln(
             "/F{} {} Tf",
             _fontManager->getFontId(prose._style.font.fontface),
-            prose._style.font.fontSize()
+            fontSize
         );
-
-        if (prose._style.color)
-            fillStyle(*prose._style.color);
-
-        _e.ln("1 0 0 -1 0 {} Tm", prose._lineHeight * prose._lines.len());
-
-        // TODO: this is needed since we are inverting the vertical axis in the PDF coordinate space
-        reverse(mutSub(prose._lines));
 
         for (usize i = 0; i < prose._lines.len(); ++i) {
             auto const& line = prose._lines[i];
@@ -250,28 +260,35 @@ export struct Canvas : Gfx::Canvas {
             if (not line.blocks())
                 continue;
 
-            auto alignedStart = first(line.blocks()).pos.cast<f64>();
-            _e.ln("{} {} Td"s, alignedStart, i == 0 ? 0 : prose._lineHeight);
+            auto lineStartPos = first(line.blocks()).pos.cast<f64>();
+            auto lineBaseline = line.baseline.cast<f64>();
 
-            auto prevEndPos = alignedStart;
+            _e.ln("1 0 0 -1 {} {} Tm", lineStartPos, lineBaseline);
+
+            auto prevEndPos = lineStartPos;
 
             _e("[<");
             for (auto& block : line.blocks()) {
                 for (auto& cell : block.cells()) {
                     if (cell.strut())
                         continue;
+
                     auto glyphAdvance = prose._style.font.advance(cell.glyph);
                     auto nextEndPosWithoutKern = prevEndPos + glyphAdvance;
                     auto nextDesiredEndPos = (block.pos + cell.pos + cell.adv).cast<f64>();
 
-                    auto kern = nextEndPosWithoutKern - nextDesiredEndPos;
-                    if (not Math::epsilonEq<f64>(kern, 0, 0.01))
-                        _e(">{}<", kern);
+                    auto kernDiff = nextEndPosWithoutKern - nextDesiredEndPos;
+
+                    if (not Math::epsilonEq<f64>(kernDiff, 0, 0.01)) {
+                        f64 pdfKern = kernDiff * (1000.0 / fontSize);
+                        _e(">{}<", pdfKern);
+                    }
 
                     for (auto rune : cell.runes()) {
                         _e("{04x}", rune);
                     }
-                    prevEndPos = prevEndPos + glyphAdvance - kern;
+
+                    prevEndPos = prevEndPos + glyphAdvance - kernDiff;
                 }
             }
             _e(">] TJ"s);
@@ -353,44 +370,37 @@ export struct Canvas : Gfx::Canvas {
 
     // MARK: Blit Operations ---------------------------------------------------
 
-    void blit(Math::Recti dest, Gfx::Pixels pixels) override {
-        if (not _imageManager) {
-            logDebugIf(debugCanvas, "pdf: blit() - no image manager available");
-            return;
-        }
-
-        auto imageId = _imageManager->addImage(pixels);
-
-        // Save graphics state
-        push();
-
-        // Set up transformation matrix to place and scale the image
-        // PDF images are 1x1 unit by default, so we need to scale them
-        // The transformation matrix is: [width 0 0 height x y]
-        _e.ln("{} 0 0 {} {} {} cm",
-            dest.width,
-            dest.height,
-            dest.x,
-            dest.y);
-
-        // Draw the image
-        _e.ln("/Im{} Do", imageId);
-
-        // Restore graphics state
-        pop();
-    }
-
     void blit(Math::Recti src, Math::Recti dest, Gfx::Pixels pixels) override {
-        // For simplicity, if src doesn't match full image, create a sub-image
-        if (src.x == 0 and src.y == 0 and 
-            src.width == pixels.width() and src.height == pixels.height()) {
-            blit(dest, pixels);
-            return;
-        }
+        auto destf = dest.cast<f64>();
 
-        // TODO: Handle sub-image blitting if needed
-        // For now, just blit the full image scaled to dest
-        blit(dest, pixels);
+        auto clippedPixels = pixels.clip(src);
+
+        push();
+        transform(Math::Trans2f{destf.width, 0, 0, -destf.height, destf.x, destf.y + destf.height});
+
+        _e.ln("BI");
+
+        _e.indented([&] {
+            _e.ln("/Width {}", clippedPixels.width());
+            _e.ln("/Height {}", clippedPixels.height());
+            _e.ln("/ColorSpace /DeviceRGB");
+            _e.ln("/BitsPerComponent 8");
+            _e.ln("/Filter [/ASCIIHexDecode]");
+        });
+
+        _e.ln("ID");
+
+        for (isize y = 0; y < clippedPixels.height(); y++) {
+            for (isize x = 0; x < clippedPixels.width(); x++) {
+                auto color = clippedPixels.load({x, y});
+                _e("{:02X}{:02X}{:02X}", color.red, color.green, color.blue);
+            }
+        }
+        _e.ln(">");
+
+        _e.ln("EI");
+
+        pop();
     }
 
     // MARK: Filter Operations -------------------------------------------------

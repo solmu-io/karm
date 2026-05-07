@@ -3,6 +3,9 @@
     "id": "karm-sys.posix",
     "type": "lib",
     "description": "Karm platform embedding layer for POSIX.",
+    "props": {
+        "export-headers": "./includes"
+    },
     "enableIf": {
         "sys": [
             "linux",

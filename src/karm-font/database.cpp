@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Font:database;
 
@@ -9,10 +9,16 @@ import Karm.Sys;
 import Karm.Core;
 import Karm.Ref;
 import Karm.Gfx;
+import Karm.Debug;
 
 import :loader;
 
+using namespace Karm::Literals;
+using namespace Karm::Ref::Literals;
+
 namespace Karm::Font {
+
+static auto debugDatabase = Debug::Flag::debug("font-database", "Log font database initialization and queries");
 
 export struct Query {
     Gfx::FontWeight weight = Gfx::FontWeight::REGULAR;
@@ -211,23 +217,22 @@ export struct Database {
                 if (diren.type != Sys::Type::FILE)
                     continue;
 
-                auto fontUrl = dir.path() / diren.name;
+                auto fontUrl = dir.url() / diren.name;
                 if (fontUrl.path.suffix() != "ttf")
                     continue;
 
+                logDebugIf(debugDatabase, "loading font: {}", fontUrl);
                 if (auto res = load(fontUrl); not res)
-                    logWarn("could not load {}: {}", fontUrl, res);
+                    logWarnIf(debugDatabase, "could not load {}: {}", fontUrl, res);
             }
         }
 
         auto ibmVga = Gfx::Fontface::fallback();
-
         add({
             .url = ""_url,
             .attrs = ibmVga->attrs(),
             .face = ibmVga,
         });
-
         return Ok();
     }
 
@@ -252,7 +257,7 @@ export struct Database {
     }
 
     Symbol _resolveGenericFamily(Symbol family) const {
-        return _genericFamily.tryGet(family).unwrapOr(family);
+        return _genericFamily.lookup(family).unwrapOr(family);
     }
 
     Opt<Rc<Gfx::Fontface>> queryExact(Symbol family, Query query = {}) const {

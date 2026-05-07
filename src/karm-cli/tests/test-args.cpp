@@ -1,7 +1,9 @@
-#include <karm-test/macros.h>
+#include <karm/test>
 
 import Karm.Cli;
 import Karm.Sys;
+
+using namespace Karm::Literals;
 
 namespace Karm::Cli::Tests {
 
@@ -46,9 +48,7 @@ testAsync$("karm-cli-args-simple-command") {
     };
 
     Vec<Str> args = {};
-
-    Sys::Context ctx;
-    co_trya$(cmd.execAsync(ctx, args));
+    co_trya$(cmd.execAsync(args));
 
     if (not cmd)
         co_return Error::other("command not invoked");
@@ -64,9 +64,7 @@ testAsync$("karm-cli-args-nested-command") {
     auto& subCmd = cmd.subCommand("sub"s);
 
     Array<Str, 1> args = {"sub"s};
-
-    Sys::Context ctx;
-    co_trya$(cmd.execAsync(ctx, args));
+    co_trya$(cmd.execAsync(args));
 
     if (not cmd)
         co_return Error::other("command not invoked");

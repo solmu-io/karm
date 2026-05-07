@@ -1,55 +1,90 @@
 export module Karm.Core:base.hash;
 
 import :meta.traits;
-
 import :base.base;
 
 namespace Karm {
 
+export struct Hasher {
+    virtual ~Hasher() = default;
+    virtual void add(u8 const* buf, usize len) = 0;
+    virtual u64 finish() = 0;
+};
+
 // https://www.ietf.org/archive/id/draft-eastlake-fnv-21.html
-export constexpr u64 fnv64(u8 const* buf, usize len) {
+export struct FnvHasher : Hasher {
     u64 hash = 0xcbf29ce484222325;
-    for (usize i = 0; i < len; i++) {
-        hash ^= buf[i];
-        hash *= 0x100000001b3;
+
+    void add(u8 const* buf, usize len) override {
+        for (usize i = 0; i < len; i++) {
+            hash ^= buf[i];
+            hash *= 0x100000001b3;
+        }
     }
-    return hash;
-}
 
-export constexpr u64 hash(Meta::Boolean auto const& v) {
-    return hash(v ? 0x1 : 0x0);
-}
+    u64 finish() override {
+        return hash;
+    }
+};
 
-static_assert(Meta::Integral<char>);
+using DefaultHasher = FnvHasher;
 
-export constexpr u64 hash(Meta::Integral auto const& v) {
-    return fnv64(reinterpret_cast<u8 const*>(&v), sizeof(v));
-}
+template <typename T>
+struct Hash;
 
-export constexpr u64 hash(Meta::Float auto const& v) {
-    return fnv64(reinterpret_cast<u8 const*>(&v), sizeof(v));
+export template <typename T>
+constexpr void hash(Meta::Derive<Hasher> auto& hasher, T const& t) {
+    if constexpr (
+        requires(Hasher& hasher, T const t) {
+            { t.hash(hasher) };
+        }
+    ) {
+        t.hash(hasher);
+    } else {
+        Hash<T>::hash(hasher, t);
+    }
 }
 
 export template <typename T>
-constexpr u64 hash(T const& t)
-    requires requires(T const t) {
-        { t.hash() } -> Meta::Same<u64>;
+constexpr u64 hash(T const& t) {
+    DefaultHasher hasher;
+    hash(hasher, t);
+    return hasher.finish();
+}
+
+export template <Meta::Boolean T>
+struct Hash<T> {
+    static constexpr void hash(Meta::Derive<Hasher> auto& hasher, T const& v) {
+        hasher.add(reinterpret_cast<u8 const*>(&v), sizeof(v));
     }
-{
-    return t.hash();
-}
+};
 
-export constexpr u64 hash(Meta::Enum auto const& v) {
-    return hash(toUnderlyingType(v));
-}
+export template <Meta::Integer T>
+struct Hash<T> {
+    static constexpr void hash(Meta::Derive<Hasher> auto& hasher, T const& v) {
+        hasher.add(reinterpret_cast<u8 const*>(&v), sizeof(v));
+    }
+};
 
-export constexpr u64 hash() {
-    return 0xcbf29ce484222325;
-}
+export template <Meta::Float T>
+struct Hash<T> {
+    static constexpr void hash(Meta::Derive<Hasher> auto& hasher, T const& v) {
+        hasher.add(reinterpret_cast<u8 const*>(&v), sizeof(v));
+    }
+};
 
-export template <typename T>
-constexpr u64 hash(u64 a, T const& v) {
-    return a ^ (hash(v) + 0x9e3779b97f4a7c15);
-}
+export template <Meta::Enum T>
+struct Hash<T> {
+    static constexpr void hash(Meta::Derive<Hasher> auto& hasher, T const& v) {
+        hasher.add(reinterpret_cast<u8 const*>(&v), sizeof(v));
+    }
+};
+
+export template <>
+struct Hash<None> {
+    static constexpr void hash(Meta::Derive<Hasher> auto& hasher, None const&) {
+        Karm::hash(hasher, 0x0);
+    }
+};
 
 } // namespace Karm

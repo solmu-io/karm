@@ -2,6 +2,7 @@ export module Karm.Sys:_embed;
 
 import Karm.Core;
 import Karm.Ref;
+import Karm.Sys.Base;
 
 import :addr;
 import :types;
@@ -12,8 +13,6 @@ export struct Intent;
 export struct Fd;
 export struct Pid;
 export struct Sched;
-export struct DirEntry;
-export struct Stat;
 export struct SysInfo;
 export struct MemInfo;
 export struct CpuInfo;
@@ -30,11 +29,7 @@ export Res<Rc<Fd>> deserializeFd(Serde::Deserializer&);
 
 // MARK: File I/O --------------------------------------------------------------
 
-export Res<Rc<Fd>> openFile(Ref::Url const& url);
-
-export Res<Rc<Fd>> createFile(Ref::Url const& url);
-
-export Res<Rc<Fd>> openOrCreateFile(Ref::Url const& url);
+export Res<Rc<Fd>> openFile(Ref::Url const& url, Flags<OpenOption> options);
 
 export Res<Pair<Rc<Fd>, Rc<Fd>>> createPipe();
 
@@ -60,7 +55,9 @@ export Async::Task<> launchAsync(Intent intent);
 
 // MARK: Process ---------------------------------------------------------------
 
-export Res<Rc<Pid>> run(Command const&);
+export Res<Rc<Pid>> spawn(Command const&);
+
+export Res<Tuple<Rc<Pid>, Rc<Fd>>> spawnPty(Command const&);
 
 // MARK: Sockets ---------------------------------------------------------------
 
@@ -69,6 +66,8 @@ export Res<Rc<Fd>> listenUdp(SocketAddr addr);
 export Res<Rc<Fd>> connectTcp(SocketAddr addr);
 
 export Res<Rc<Fd>> listenTcp(SocketAddr addr);
+
+export Res<Rc<Fd>> connectIpc(Ref::Url url);
 
 export Res<Rc<Fd>> listenIpc(Ref::Url url);
 
@@ -111,8 +110,6 @@ export Res<> sleep(Duration);
 export Res<> sleepUntil(Instant);
 
 export Res<> exit(i32);
-
-export Res<Ref::Url> pwd();
 
 // MARK: Sandboxing ------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Ref:url;
 
@@ -9,6 +9,7 @@ import Karm.Core;
 import Karm.Crypto;
 
 import :mime;
+import :uti;
 import :path;
 
 namespace Karm::Ref {
@@ -22,10 +23,14 @@ auto const RE_COMPONENT =
 auto const RE_SCHEME = RE_COMPONENT & ':'_re;
 
 export struct Blob {
-    Mime type = "application/octet-stream"_mime;
+    Uti type = Uti::PUBLIC_DATA;
     Vec<u8> data{};
 
-    usize len() { return data.len(); }
+    usize len() const { return data.len(); }
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, data);
+    }
 
     bool operator==(Blob const&) const = default;
 };
@@ -74,12 +79,12 @@ export struct Url {
     Path path;
     String query;
     String fragment;
-    Res<Rc<Blob>> blob = NONE;
+    Opt<Rc<Blob>> blob = NONE;
 
     static Url data(Mime mime, Bytes data) {
         Url url;
         url.scheme = "data"_sym;
-        url.blob = Ok(makeRc<Blob>(mime, data));
+        url.blob = makeRc<Blob>(Uti::fromMime(mime), data);
         return url;
     }
 
@@ -103,7 +108,7 @@ export struct Url {
             Io::TextEncoder enc{buf};
             try$(enc.writeStr(urlDecode(s).str()));
         }
-        return Ok(makeRc<Blob>(mime, buf.take()));
+        return Ok(makeRc<Blob>(Uti::fromMime(mime), buf.take()));
     }
 
     static Url parse(Io::SScan& s, Opt<Url> baseUrl = NONE) {
@@ -115,7 +120,7 @@ export struct Url {
         }
 
         if (url.scheme == "data") {
-            url.blob = _parseData(s);
+            url.blob = _parseData(s).ok();
             return url;
         }
 
@@ -241,6 +246,17 @@ export struct Url {
 
     bool operator==(Url const&) const = default;
 
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, scheme);
+        Karm::hash(h, userInfo);
+        Karm::hash(h, host);
+        Karm::hash(h, port);
+        Karm::hash(h, path);
+        Karm::hash(h, query);
+        Karm::hash(h, fragment);
+        Karm::hash(h, blob);
+    }
+
     bool isRelative() const {
         return not scheme;
     }
@@ -291,25 +307,40 @@ export struct Url {
 
         return Ok(targetUrl);
     }
+
+    Ref::Url origin() {
+        auto copy = *this;
+        copy.path = "/"_path;
+        copy.query = ""s;
+        copy.fragment = ""s;
+        return copy;
+    }
+
+    Res<> serialize(Serde::Serializer& ser) const {
+        return ser.serializeString(str());
+    }
+
+    static Res<Url> deserialize(Serde::Deserializer& de) {
+        return Ok(parse(try$(de.deserializeString())));
+    }
 };
 
-export Url parseUrlOrPath(Str str, Opt<Url> baseUrl = NONE) {
+export Url parseUrlOrPath(Str str, Url baseUrl) {
     if (Url::isUrl(str))
         return Url::parse(str, baseUrl);
 
-    Url url = baseUrl.unwrapOr(Url::parse(""));
-    url.path = url.path.join(Path::parse(str));
-    return url;
+    baseUrl.path = baseUrl.path.join(Path::parse(str));
+    return baseUrl;
 }
 
 } // namespace Karm::Ref
 
-export Karm::Ref::Url operator""_url(char const* str, Karm::usize len) {
-    return Karm::Ref::Url::parse({str, len});
-}
-
 export Karm::Ref::Url operator/(Karm::Ref::Url const& url, Karm::Str path) {
     return url.join(path);
+}
+
+export Karm::Ref::Url operator/(Karm::Ref::Url const& url, Karm::String const& path) {
+    return url.join(path.str());
 }
 
 export Karm::Ref::Url operator/(Karm::Ref::Url const& url, Karm::Ref::Path const& path) {
@@ -322,3 +353,11 @@ struct Karm::Io::Formatter<Karm::Ref::Url> {
         return url.unparse(writer);
     }
 };
+
+namespace Karm::Ref::Literals {
+
+export Karm::Ref::Url operator""_url(char const* str, Karm::usize len) {
+    return Karm::Ref::Url::parse({str, len});
+}
+
+} // namespace Karm::Ref::Literals

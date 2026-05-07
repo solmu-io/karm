@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Ref:path;
 
@@ -87,6 +87,26 @@ export struct Path {
         return last(_segs);
     }
 
+    Str stem() const {
+        auto base = basename();
+        if (not base)
+            return "";
+        auto dotIndex = lastIndexOf(base, '.');
+        if (not dotIndex)
+            return base;
+        return sub(base, 0, *dotIndex);
+    }
+
+    Str suffix() const {
+        auto base = basename();
+        if (not base)
+            return "";
+        auto dotIndex = lastIndexOf(base, '.');
+        if (not dotIndex)
+            return "";
+        return next(base, *dotIndex + 1);
+    }
+
     Path join(Path const& other) const {
         if (other.rooted)
             return other;
@@ -164,25 +184,17 @@ export struct Path {
         return _segs.len();
     }
 
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, rooted);
+        Karm::hash(h, _segs);
+    }
+
     bool operator==(Path const&) const = default;
 
     auto operator<=>(Path const&) const = default;
-
-    Str suffix() const {
-        if (not _segs.len())
-            return "";
-        auto dotIndex = lastIndexOf(last(_segs), '.');
-        if (not dotIndex.has())
-            return "";
-        return next(last(_segs), *dotIndex + 1);
-    }
 };
 
 } // namespace Karm::Ref
-
-export auto operator""_path(char const* str, Karm::usize len) {
-    return Karm::Ref::Path::parse({str, len});
-}
 
 export auto operator/(Karm::Ref::Path const& path, Karm::Ref::Path const& other) {
     return path.join(other);
@@ -198,3 +210,11 @@ struct Karm::Io::Formatter<Karm::Ref::Path> {
         return path.unparse(writer);
     }
 };
+
+namespace Karm::Ref::Literals {
+
+export auto operator""_path(char const* str, Karm::usize len) {
+    return Karm::Ref::Path::parse({str, len});
+}
+
+} // namespace Karm::Ref::Literals

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Math:path;
 
@@ -15,7 +15,11 @@ import :rect;
 import :vec;
 import :trans;
 
+using namespace Karm::Re::Literals;
+
 namespace Karm::Math {
+
+export using Karm::begin, Karm::end;
 
 export struct Path {
     enum struct Code {
@@ -138,23 +142,30 @@ export struct Path {
     };
 
     auto iterContours() const {
-        return Iter([&, i = 0uz] mutable -> Opt<_Contour> {
-            if (i >= _contours.len()) {
-                return NONE;
+        struct Iter {
+            Path const& self;
+            usize i = 0;
+
+            Opt<_Contour> next() {
+                if (i >= self._contours.len()) {
+                    return NONE;
+                }
+
+                i++;
+
+                return _Contour{
+                    sub(self._verts, self._contours[i - 1].start, self._contours[i - 1].end),
+                    self._contours[i - 1].close,
+                };
             }
+        };
 
-            i++;
-
-            return _Contour{
-                sub(_verts, _contours[i - 1].start, _contours[i - 1].end),
-                _contours[i - 1].close,
-            };
-        });
+        return Iter{*this};
     }
 
-    Opt<Math::Rectf> _bound;
+    mutable Opt<Math::Rectf> _bound;
 
-    Math::Rectf bound() {
+    Math::Rectf bound() const {
         if (isEmpty(_verts))
             return {};
 
@@ -269,8 +280,8 @@ export struct Path {
         if (sb > 0.0)
             s = Math::sqrt(sa / sb);
 
-        bool fa = options & LARGE;
-        bool fs = options & SWEEP;
+        bool fa = options.any(LARGE);
+        bool fs = options.any(SWEEP);
 
         if (fa == fs) {
             s = -s;
@@ -548,7 +559,7 @@ export struct Path {
     void path(Math::Path const& path) {
         for (auto contour : path.iterContours()) {
             if (contour.len() == 0)
-                panic("it is not possible to have an empty contour at this point");
+                continue;
 
             moveTo(first(contour));
             for (auto v : next(contour, 1)) {

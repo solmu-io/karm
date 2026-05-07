@@ -1,34 +1,17 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Sys:stat;
 
 import Karm.Core;
 import Karm.Ref;
+import Karm.Sys.Base;
 
 import :_embed;
 import :sandbox;
 
 namespace Karm::Sys {
-
-export enum struct Type {
-    FILE,
-    DIR,
-    OTHER,
-};
-
-export struct Stat {
-    Type type;
-    usize size;
-    SystemTime accessTime;
-    SystemTime modifyTime;
-    SystemTime changeTime;
-
-    bool operator==(Type other) const {
-        return type == other;
-    }
-};
 
 export Res<Stat> stat(Ref::Url const& url) {
     if (url.scheme != "bundle")

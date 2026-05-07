@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.symbol;
 
@@ -59,8 +59,12 @@ struct _SymbolBuf {
         return Str(*this) == other;
     }
 
-    u64 hash() const {
-        return Karm::hash(Str{*this});
+    bool operator==(String const& other) const {
+        return Str(*this) == other;
+    }
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, Str{*this});
     }
 };
 
@@ -76,6 +80,10 @@ export struct Symbol {
 
     Str str() const {
         return Str(*_buf);
+    }
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, str());
     }
 
     bool operator==(Symbol const& other) const {
@@ -101,19 +109,14 @@ static Set<Rc<_SymbolBuf>>& _symboleRegistry() {
 }
 
 Symbol Symbol::from(Str str) {
-    auto& registry = _symboleRegistry();
-    registry.ensureForInsert();
-    auto* slot = registry.lookup(str);
-    if (slot and slot->state == Set<Rc<_SymbolBuf>>::State::USED) {
-        return {slot->unwrap()};
-    }
-
-    auto buf = _SymbolBuf::from(str);
-    registry.put(buf);
-    return {buf};
+    return {_symboleRegistry().lookupOrAdd(str, [&] {
+        return _SymbolBuf::from(str);
+    })};
 }
 
 } // namespace Karm
+
+namespace Karm::Literals {
 
 export constexpr Karm::Symbol operator""_sym(char const* buf, Karm::usize len) {
     return Karm::Symbol::from({buf, len});
@@ -122,3 +125,5 @@ export constexpr Karm::Symbol operator""_sym(char const* buf, Karm::usize len) {
 export constexpr Karm::Symbol operator""_sym(char const* buf) {
     return Karm::Symbol::from(buf);
 }
+
+} // namespace Karm::Literals

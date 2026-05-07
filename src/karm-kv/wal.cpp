@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Kv:wal;
 
@@ -119,7 +119,7 @@ export struct Wal {
         return Ok();
     }
 
-    Generator<Record> iter() {
+    Yield<Record> iter() {
         // FIXME: Handle errors properly
         _file.seek(Io::Seek::fromBegin(sizeof(RawHeader))).unwrap("could not seek");
 

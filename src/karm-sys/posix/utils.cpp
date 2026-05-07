@@ -1,14 +1,24 @@
+module;
+
 #include <errno.h>
+#include <netinet/in.h>
 #include <stdlib.h>
-
+#include <sys/stat.h>
 //
-#include <karm-core/macros.h>
+#include <karm/macros>
 
-#include "utils.h"
+export module Karm.Sys.Posix:utils;
+
+import Karm.Core;
+import Karm.Sys;
+import Karm.Ref;
+
+using namespace Karm::Literals;
+using namespace Karm::Ref::Literals;
 
 namespace Karm::Posix {
 
-Error fromErrno(isize error) {
+export Error fromErrno(isize error) {
     if (EOPNOTSUPP != ENOTSUP and error == EOPNOTSUPP) {
         return Error::unsupported("operation not supported on socket");
     }
@@ -175,12 +185,11 @@ Error fromErrno(isize error) {
     }
 }
 
-Error fromLastErrno() {
+export Error fromLastErrno() {
     return fromErrno(errno);
 }
 
-// Construct an error from a process status code.
-Error fromStatus(isize status) {
+export Error fromStatus(isize status) {
     if (WIFEXITED(status)) {
         return fromErrno(WEXITSTATUS(status));
     } else if (WIFSIGNALED(status)) {
@@ -190,17 +199,16 @@ Error fromStatus(isize status) {
     }
 }
 
-Res<> consumeErrno() {
-    if (errno == 0) {
+export Res<> consumeErrno() {
+    if (errno == 0)
         return Ok();
-    }
 
     auto err = fromLastErrno();
     errno = 0;
     return err;
 }
 
-struct sockaddr_in toSockAddr(Sys::SocketAddr addr) {
+export sockaddr_in toSockAddr(Sys::SocketAddr addr) {
     struct sockaddr_in sockaddr;
     auto addr4 = addr.addr.unwrap<Sys::Ip4>("only ipv4 supported");
     sockaddr.sin_family = AF_INET;
@@ -209,14 +217,14 @@ struct sockaddr_in toSockAddr(Sys::SocketAddr addr) {
     return sockaddr;
 }
 
-Sys::SocketAddr fromSockAddr(struct sockaddr_in sockaddr) {
+export Sys::SocketAddr fromSockAddr(struct sockaddr_in sockaddr) {
     Sys::SocketAddr addr{Sys::Ip4::unspecified(), 0};
     addr.addr.unwrap<Sys::Ip4>("only ipv4 supported")._raw._value = sockaddr.sin_addr.s_addr;
     addr.port = ntohs(sockaddr.sin_port);
     return addr;
 }
 
-Sys::Stat fromStat(struct stat const& buf) {
+export Sys::Stat fromStat(struct stat const& buf) {
     Sys::Stat stat{};
     Sys::Type type = Sys::Type::FILE;
     if (S_ISDIR(buf.st_mode))
@@ -229,7 +237,7 @@ Sys::Stat fromStat(struct stat const& buf) {
     return stat;
 }
 
-struct timespec toTimespec(SystemTime ts) {
+export struct timespec toTimespec(SystemTime ts) {
     struct timespec pts;
     if (ts.isEndOfTime()) {
         pts.tv_sec = Limits<long>::MAX;
@@ -242,7 +250,7 @@ struct timespec toTimespec(SystemTime ts) {
     return pts;
 }
 
-timespec toTimespec(Duration ts) {
+export timespec toTimespec(Duration ts) {
     timespec pts{};
     if (ts.isInfinite()) {
         pts.tv_sec = Limits<long>::MAX;
@@ -255,9 +263,14 @@ timespec toTimespec(Duration ts) {
     return pts;
 }
 
+export enum struct RepoType {
+    CUTEKIT,
+    PREFIX
+};
+
 Opt<Tuple<Str, RepoType>> _repoOverride;
 
-Res<Tuple<Str, RepoType>> repoRoot() {
+export Res<Tuple<Str, RepoType>> repoRoot() {
     if (_repoOverride)
         return Ok(*_repoOverride);
 
@@ -287,8 +300,71 @@ Res<Tuple<Str, RepoType>> repoRoot() {
     return Error::notFound("SKIFT_BUNDLES not set");
 }
 
-void overrideRepo(Tuple<Str, RepoType> repo) {
+export void overrideRepo(Tuple<Str, RepoType> repo) {
     _repoOverride = repo;
+}
+
+export Res<Ref::Path> resolve(Ref::Url const& url) {
+    Ref::Path resolved;
+    if (url.scheme == "file") {
+        resolved = url.path;
+    } else if (url.scheme == "fd") {
+        if (url.path == "stdin"_path) {
+            resolved = "/dev/stdin"_path;
+        } else if (url.path == "stdout"_path) {
+            resolved = "/dev/stdout"_path;
+        } else if (url.path == "stderr"_path) {
+            resolved = "/dev/stderr"_path;
+        } else {
+            return Error::notFound("unknown fd");
+        }
+    } else if (url.scheme == "ipc") {
+        auto const* runtimeDir = getenv("XDG_RUNTIME_DIR");
+        if (not runtimeDir) {
+            runtimeDir = "/tmp/";
+            Sys::errln("XDG_RUNTIME_DIR not set, falling back on {}", runtimeDir);
+        }
+
+        auto path = url.path;
+        path.rooted = false;
+
+        resolved = Ref::Path::parse(runtimeDir).join(path);
+    } else if (url.scheme == "bundle") {
+        auto [repo, format] = try$(Posix::repoRoot());
+
+        auto path = url.path;
+        path.rooted = false;
+
+        if (format == Posix::RepoType::CUTEKIT) {
+            resolved = Ref::Path::parse(repo)
+                           .join(url.host.str())
+                           .join("__res__")
+                           .join(path);
+        } else if (format == Posix::RepoType::PREFIX) {
+            resolved = Ref::Path::parse(repo)
+                           .join("share")
+                           .join(url.host.str())
+                           .join(path);
+        } else {
+            return Error::notFound("unknown repo type");
+        }
+    } else if (url.scheme == "location") {
+        auto* maybeHome = getenv("HOME");
+        if (not maybeHome)
+            return Error::notFound("HOME not set");
+
+        auto path = url.path;
+        path.rooted = false;
+
+        if (url.host == "home")
+            resolved = Ref::Path::parse(maybeHome).join(path);
+        else
+            resolved = Ref::Path::parse(maybeHome).join(Io::toPascalCase(url.host.str()).unwrap()).join(path);
+    } else {
+        return Error::notFound("unknown url scheme");
+    }
+
+    return Ok(resolved);
 }
 
 } // namespace Karm::Posix

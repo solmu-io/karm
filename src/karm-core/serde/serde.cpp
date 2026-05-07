@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:serde.serde;
 
@@ -14,6 +14,7 @@ import :meta.visit;
 import :base.distinct;
 import :base.flags;
 import :base.box;
+import :base.time;
 
 namespace Karm::Serde {
 
@@ -116,9 +117,11 @@ export struct Serializer {
     struct Scope : Meta::NoCopy {
         Serializer* _ser = nullptr;
 
-        Scope(Serializer* ser) : _ser(ser) {}
+        Scope(Serializer* ser) : _ser(ser) {
+        }
 
-        Scope(Scope&& other) : _ser(std::exchange(other._ser, nullptr)) {}
+        Scope(Scope&& other) : _ser(std::exchange(other._ser, nullptr)) {
+        }
 
         Scope& operator=(Scope&& other) noexcept {
             std::swap(_ser, other._ser);
@@ -194,13 +197,21 @@ export struct Deserializer {
     struct Scope {
         Deserializer* _de;
         Type type;
+        usize _consumed = 0;
 
-        Scope(Deserializer* de, Type type) : _de(de), type(type) {}
+        Scope(Deserializer* de, Type type) : _de(de), type(type) {
+        }
 
-        Scope(Scope&& other) : _de(std::exchange(other._de, nullptr)) {}
+        Scope(Scope&& other)
+            : _de(std::exchange(other._de, nullptr)),
+              type(std::move(other.type)),
+              _consumed(std::exchange(other._consumed, 0)) {
+        }
 
         Scope& operator=(Scope&& other) noexcept {
             std::swap(_de, other._de);
+            std::swap(type, other.type);
+            std::swap(_consumed, other._consumed);
             return *this;
         }
 
@@ -209,6 +220,8 @@ export struct Deserializer {
         }
 
         Res<bool> ended() const {
+            if (type.len)
+                return Ok(_consumed >= type.len.unwrap());
             return _de->endedUnit();
         }
 
@@ -227,11 +240,13 @@ export struct Deserializer {
 
         template <typename T>
         Res<Tuple<Type, T>> deserializeUnit(Type type) {
+            ++_consumed;
             return _de->deserializeUnit<T>(type);
         }
 
         template <typename T>
         Res<T> deserialize() {
+            ++_consumed;
             return _de->deserialize<T>();
         }
     };
@@ -314,12 +329,15 @@ struct Serde<Error> {
     //       don't care about the message, but the user does though.
 
     static Res<> serialize(Serializer& ser, Error const& v) {
-        return ser.serialize(toUnderlyingType(v.code()));
+        try$(ser.serialize(toUnderlyingType(v.code())));
+        try$(ser.serialize<String>(v.msg()));
+        return Ok();
     }
 
     static Res<Error> deserialize(Deserializer& de) {
         auto code = static_cast<Error::Code>(try$(de.deserialize<Meta::UnderlyingType<Error::Code>>()));
-        return Ok(Error{code, nullptr});
+        auto str = try$(de.deserialize<String>());
+        return Ok(Error{code, std::move(str)});
     }
 };
 
@@ -458,7 +476,33 @@ struct Serde<Distinct<T, Tag>> {
 
     static Res<D> deserialize(Deserializer& de) {
         auto value = try$(::Karm::Serde::deserialize<T>(de));
-        return Ok(D{value});
+        return Ok<D>(value);
+    }
+};
+
+// TODO: Comeback to this and use typed unit
+export template <>
+struct Serde<SystemTime> {
+    static Res<> serialize(Serializer& ser, SystemTime const& v) {
+        return ::Karm::Serde::serialize(ser, v.val());
+    }
+
+    static Res<SystemTime> deserialize(Deserializer& de) {
+        auto value = try$(::Karm::Serde::deserialize<_TimeVal>(de));
+        return Ok<SystemTime>(value);
+    }
+};
+
+// TODO: Comeback to this and use typed unit
+export template <>
+struct Serde<Instant> {
+    static Res<> serialize(Serializer& ser, Instant const& v) {
+        return ::Karm::Serde::serialize(ser, v.val());
+    }
+
+    static Res<Instant> deserialize(Deserializer& de) {
+        auto value = try$(::Karm::Serde::deserialize<_TimeVal>(de));
+        return Ok<Instant>(value);
     }
 };
 
@@ -532,7 +576,7 @@ struct Serde<Vec<T>> {
     static Res<Vec<T>> deserialize(Deserializer& de) {
         auto scope = try$(de.beginScope({Type::VEC}));
         Vec<T> res;
-        while (not scope.ended()) {
+        while (not try$(scope.ended())) {
             res.pushBack(try$(scope.deserialize<T>()));
         }
         try$(scope.end());
@@ -558,7 +602,7 @@ struct Serde<Map<String, T>> {
     static Res<Map<String, T>> deserialize(Deserializer& de) {
         auto scope = try$(de.beginScope({.kind = Type::MAP}));
         Map<String, T> res;
-        while (not scope.ended()) {
+        while (not try$(scope.ended())) {
             auto [type, value] = try$(scope.deserializeUnit<T>({
                 .kind = Type::MAP_ITEM,
             }));
@@ -634,5 +678,4 @@ struct Serde<Box<T>> {
         return Ok(makeBox<T>(try$(de.deserialize<T>())));
     }
 };
-
 } // namespace Karm::Serde

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.res;
 
@@ -26,7 +26,7 @@ struct [[nodiscard]] Res {
 
     template <typename U>
     always_inline constexpr Res(Ok<U> ok)
-        : _inner(Ok<V>{ok.unwrap()}) {}
+        : _inner(Ok<V>{ok.take()}) {}
 
     always_inline constexpr Res(E err)
         : _inner(err) {}
@@ -84,12 +84,6 @@ struct [[nodiscard]] Res {
         return other;
     }
 
-    always_inline constexpr Value unwrapOrDefault(Value other) const {
-        if (_inner.template is<Ok<V>>())
-            return _inner.template unwrap<Ok<V>>().unwrap();
-        return other;
-    }
-
     always_inline constexpr Value unwrapOrElse(auto f) const {
         if (_inner.template is<Ok<V>>())
             return _inner.template unwrap<Ok<V>>().unwrap();
@@ -103,7 +97,7 @@ struct [[nodiscard]] Res {
         return _inner.template unwrap<Ok<V>>().take();
     }
 
-    template <typename U>
+    template <typename U = E>
     always_inline constexpr Res<V, U> mapErr(auto f) {
         if (_inner.template is<Ok<V>>())
             return _inner.template unwrap<Ok<V>>();
@@ -115,6 +109,13 @@ struct [[nodiscard]] Res {
         if (_inner.template is<Ok<V>>())
             return _inner.template unwrap<Ok<V>>();
         return U{};
+    }
+
+    template <typename... Args>
+    always_inline constexpr Res<V, E> wrapErr(Args&&... args) {
+        if (_inner.template is<Ok<V>>())
+            return _inner.template unwrap<Ok<V>>();
+        return _inner.template unwrap<E>().wrap(std::forward<Args>(args)...);
     }
 
     template <typename U>

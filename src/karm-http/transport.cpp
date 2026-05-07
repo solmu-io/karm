@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Http:transport;
 
@@ -21,8 +21,6 @@ export struct Transport {
 };
 
 // MARK: Http Transport --------------------------------------------------------
-
-constexpr usize BUF_SIZE = 4096;
 
 struct ContentBody : Body {
     usize _resumesPos = 0;
@@ -83,7 +81,7 @@ struct ChunkedBody : Body {
 
         _compact();
 
-        Array<u8, BUF_SIZE> tmp = {};
+        Array<u8, Io::DEFAULT_BUFFER_SIZE> tmp = {};
         usize n = co_trya$(_conn->readAsync(tmp, ct));
         if (n == 0) {
             // connection closed unexpectedly
@@ -256,7 +254,7 @@ struct HttpTransport : Transport {
 
         if (auto contentLength = response.header.contentLength()) {
             response.body = makeRc<ContentBody>(conn, contentLength.unwrap());
-        } else if (auto transferEncoding = response.header.tryGet(Header::TRANSFER_ENCODING)) {
+        } else if (auto transferEncoding = response.header.lookup(Header::TRANSFER_ENCODING)) {
             // For now we only support plain "chunked".
             if (*transferEncoding == "chunked") {
                 response.body = makeRc<ChunkedBody>(conn);
@@ -367,7 +365,7 @@ struct LocalTransport : Transport {
     LocalTransport(Vec<String> allowed)
         : _policy(LocalTransportPolicy::FILTER), _allowed(allowed) {}
 
-    Res<Pair<Rc<Body>, Ref::Mime>> _load(Ref::Url url) {
+    Res<Tuple<Rc<Body>, Ref::Uti>> _load(Ref::Url url) {
         if (url.scheme == "data") {
             auto blob = try$(url.blob);
             auto body = Body::from(blob);
@@ -376,8 +374,8 @@ struct LocalTransport : Transport {
 
         if (try$(Sys::isFile(url))) {
             auto body = Body::from(try$(Sys::File::open(url)));
-            auto mime = Ref::sniffSuffix(url.path.suffix()).unwrapOr("application/octet-stream"_mime);
-            return Ok(Pair{body, mime});
+            auto uti = Ref::Uti::fromSuffix(url.path.suffix());
+            return Ok(Pair{body, uti});
         }
 
         auto dir = try$(Sys::Dir::open(url));
@@ -390,11 +388,14 @@ struct LocalTransport : Transport {
             e("<li><a href=\"{}\">{}</a></li>", url.join(diren.name), diren.name);
         }
         e("</ul></body></html>");
-        return Ok(Pair{Body::from(sw.take()), "text/html"_mime});
+        return Ok(Tuple<Rc<Body>, Ref::Uti>{
+            Body::from(sw.take()),
+            Ref::Uti::PUBLIC_HTML,
+        });
     }
 
     Async::Task<> _saveAsync(Ref::Url url, Rc<Body> body, Async::CancellationToken ct) {
-        auto file = co_try$(Sys::File::create(url));
+        auto file = co_try$(Sys::File::openWith(url, {Sys::OpenOption::CREATE, Sys::OpenOption::WRITE, Sys::OpenOption::READ, Sys::OpenOption::TRUNCATE}));
         co_trya$(Aio::copyAsync(*body, file, ct));
         co_return Ok();
     }
@@ -407,20 +408,23 @@ struct LocalTransport : Transport {
         }
 
         auto response = makeRc<Response>();
-        response->code = OK;
 
-        if (auto it = request->body;
-            it and (request->method == PUT or
-                    request->method == POST))
-            co_trya$(_saveAsync(request->url, *it, ct));
-
-        if (request->method == GET or request->method == POST) {
-            auto [body, mime] = co_try$(_load(request->url));
+        if (request->method == GET) {
+            auto [body, type] = co_try$(_load(request->url));
+            response->code = OK;
             response->body = body;
-            response->header.put(Header::CONTENT_TYPE, mime.str());
+            response->header.put(Header::CONTENT_TYPE, type.primaryMimeType().str());
+            co_return Ok(response);
+        } else if (request->method == PUT) {
+            if (not request->body)
+                co_return Error::invalidInput("PUT request requires a body");
+            co_trya$(_saveAsync(request->url, *request->body, ct));
+            response->code = OK;
+            co_return Ok(response);
+        } else {
+            response->code = METHOD_NOT_ALLOWED;
+            co_return Ok(response);
         }
-
-        co_return Ok(response);
     }
 };
 

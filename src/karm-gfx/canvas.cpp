@@ -234,6 +234,15 @@ export struct Canvas : Meta::NoCopy {
         fill();
     }
 
+    // Stroke a rectangle.
+    // NOTE: This is a convenience function for backends that have
+    //       optimized paths for integer coordinates.
+    virtual void stroke(Math::Recti r, Math::Radiif radii = 0) {
+        beginPath();
+        rect(r.cast<f64>(), radii);
+        stroke();
+    }
+
     // Fill a rectangle, with integer coordinates.
     // NOTE: This is a convenience function for backends that have
     //       optimized paths for integer coordinates.
@@ -309,10 +318,10 @@ export struct Canvas : Meta::NoCopy {
                     if (cell.span and cell.span.unwrap()->color) {
                         push();
                         fillStyle(*cell.span.unwrap()->color);
-                        fill(prose._style.font, cell.glyph, Vec2Au{block.pos + cell.pos, line.baseline}.cast<f64>());
+                        fill(prose._style.font, cell.glyph, Math::Vec2Au{block.pos + cell.pos, line.baseline}.cast<f64>());
                         pop();
                     } else {
-                        fill(prose._style.font, cell.glyph, Vec2Au{block.pos + cell.pos, line.baseline}.cast<f64>());
+                        fill(prose._style.font, cell.glyph, Math::Vec2Au{block.pos + cell.pos, line.baseline}.cast<f64>());
                     }
                 }
             }

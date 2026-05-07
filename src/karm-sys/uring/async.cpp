@@ -1,22 +1,22 @@
 module;
 
 #include <liburing.h>
+#include <netinet/in.h>
 #include <poll.h>
 //
-#include <karm-core/macros.h>
-#include <karm-sys/posix/fd.h>
-#include <karm-sys/posix/utils.h>
+#include <karm/macros>
 
 module Karm.Sys;
 
 import Karm.Core;
+import Karm.Sys.Posix;
 
 namespace Karm::Sys::_Embed {
 
 struct __kernel_timespec toKernelTimespec(Instant ts) {
     struct __kernel_timespec kts;
     if (ts.isEndOfTime()) {
-        kts.tv_sec = LONG_MAX;
+        kts.tv_sec = Limits<long>::MAX;
         kts.tv_nsec = 0;
         return kts;
     } else {
@@ -29,7 +29,7 @@ struct __kernel_timespec toKernelTimespec(Instant ts) {
 struct __kernel_timespec toKernelTimespec(Duration ts) {
     struct __kernel_timespec kts;
     if (ts.isInfinite()) {
-        kts.tv_sec = LONG_MAX;
+        kts.tv_sec = Limits<long>::MAX;
         kts.tv_nsec = 0;
         return kts;
     } else {
@@ -117,7 +117,7 @@ struct UringSched : Sys::Sched {
         };
 
         co_try$(ct.errorIfCanceled());
-        Job job{*this, co_try$(Posix::toPosixFd(fd)), buf};
+        Job job{*this, co_try$(Posix::ensurePosixFd(fd)), buf};
         submit(job, ct);
         co_return co_await job.future();
     }
@@ -160,7 +160,7 @@ struct UringSched : Sys::Sched {
         };
 
         co_try$(ct.errorIfCanceled());
-        Job job{*this, co_try$(Posix::toPosixFd(fd)), buf};
+        Job job{*this, co_try$(Posix::ensurePosixFd(fd)), buf};
         submit(job, ct);
         co_return co_await job.future();
     }
@@ -192,7 +192,7 @@ struct UringSched : Sys::Sched {
         };
 
         co_try$(ct.errorIfCanceled());
-        Job job{*this, co_try$(Posix::toPosixFd(fd))};
+        Job job{*this, co_try$(Posix::ensurePosixFd(fd))};
         submit(job, ct);
         co_return co_await job.future();
     }
@@ -228,7 +228,7 @@ struct UringSched : Sys::Sched {
         };
 
         co_try$(ct.errorIfCanceled());
-        Job job{*this, co_try$(Posix::toPosixFd(fd))};
+        Job job{*this, co_try$(Posix::ensurePosixFd(fd))};
         submit(job, ct);
         co_return co_await job.future();
     }
@@ -279,7 +279,7 @@ struct UringSched : Sys::Sched {
         };
 
         co_try$(ct.errorIfCanceled());
-        Job job{*this, co_try$(Posix::toPosixFd(fd)), buf, addr};
+        Job job{*this, co_try$(Posix::ensurePosixFd(fd)), buf, addr};
         submit(job, ct);
         co_return co_await job.future();
     }
@@ -324,7 +324,7 @@ struct UringSched : Sys::Sched {
         };
 
         co_try$(ct.errorIfCanceled());
-        Job job{*this, co_try$(Posix::toPosixFd(fd)), buf};
+        Job job{*this, co_try$(Posix::ensurePosixFd(fd)), buf};
         submit(job, ct);
         co_return co_await job.future();
     }
@@ -367,7 +367,7 @@ struct UringSched : Sys::Sched {
         };
 
         co_try$(ct.errorIfCanceled());
-        Job job{*this, co_try$(Posix::toPosixFd(fd)), events};
+        Job job{*this, co_try$(Posix::ensurePosixFd(fd)), events};
         submit(job, ct);
         co_return co_await job.future();
     }
@@ -406,16 +406,7 @@ struct UringSched : Sys::Sched {
         co_return co_await job.future();
     }
 
-    bool _inWait = false;
-
     Res<> wait(Instant until) override {
-        if (_inWait)
-            panic("nested wait");
-        _inWait = true;
-        Defer _{[&] {
-            _inWait = false;
-        }};
-
         Instant now = Sys::instant();
 
         Duration delta = Duration::zero();

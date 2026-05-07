@@ -1,12 +1,14 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Kira:badge;
 
 import Karm.Core;
 import Karm.Ui;
 import Karm.Gfx;
+
+using namespace Karm::Literals;
 
 namespace Karm::Kira {
 

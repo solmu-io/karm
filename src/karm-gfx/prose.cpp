@@ -5,6 +5,8 @@ import Karm.Math;
 import :color;
 import :font;
 
+using namespace Karm::Math::Literals;
+
 namespace Karm::Gfx {
 
 export enum struct TextAlign {
@@ -19,6 +21,7 @@ export struct ProseStyle {
     Opt<Color> color = NONE;
     bool wordwrap = true;
     bool multiline = false;
+    bool collapseEmptyLines = true;
 
     ProseStyle withSize(f64 size) const {
         ProseStyle style = *this;
@@ -65,9 +68,9 @@ export struct Prose : Meta::Pinned {
 
     struct StrutCell {
         usize id;
-        Vec2Au size{};
+        Math::Vec2Au size{};
         // NOTE: baseline is distance from strut's top to the considered baseline
-        Au baseline{};
+        Math::Au baseline{};
 
         void repr(Io::Emit& e) const {
             e("(StrutCell id: {} size: {} baseline: {})", id, size, baseline);
@@ -80,8 +83,8 @@ export struct Prose : Meta::Pinned {
 
         urange runeRange;
         Glyph glyph;
-        Au pos = 0_au; //< Position of the glyph within the block
-        Au adv = 0_au; //< Advance of the glyph
+        Math::Au pos = 0_au; //< Position of the glyph within the block
+        Math::Au adv = 0_au; //< Advance of the glyph
 
         Opt<usize> relatedStrutIndex = NONE;
 
@@ -89,7 +92,7 @@ export struct Prose : Meta::Pinned {
             if (strut()) {
                 adv = prose->_struts[relatedStrutIndex.unwrap()].size.x;
             } else {
-                adv = Au{prose->_style.font.advance(glyph)};
+                adv = Math::Au{prose->_style.font.advance(glyph)};
             }
         }
 
@@ -129,7 +132,7 @@ export struct Prose : Meta::Pinned {
             return &prose->_struts[relatedStrutIndex.unwrap()];
         }
 
-        Au Yposition(Au dominantBaselineYPosition) const {
+        Math::Au yPosition(Math::Au dominantBaselineYPosition) const {
             if (relatedStrutIndex == NONE)
                 return dominantBaselineYPosition;
 
@@ -143,8 +146,8 @@ export struct Prose : Meta::Pinned {
         urange runeRange;
         urange cellRange;
 
-        Au pos = 0_au; // Position of the block within the line
-        Au width = 0_au;
+        Math::Au pos = 0_au; // Position of the block within the line
+        Math::Au width = 0_au;
 
         MutSlice<Cell> cells() {
             return mutSub(prose->_cells, cellRange);
@@ -191,8 +194,8 @@ export struct Prose : Meta::Pinned {
 
         urange runeRange;
         urange blockRange;
-        Au baseline = 0_au; // Baseline of the line within the text
-        Au width = 0_au;
+        Math::Au baseline = 0_au; // Baseline of the line within the text
+        Math::Au width = 0_au;
 
         Slice<Block> blocks() const {
             return sub(prose->_blocks, blockRange);
@@ -218,7 +221,7 @@ export struct Prose : Meta::Pinned {
     f64 _spaceWidth{};
     f64 _lineHeight{};
 
-    Vec2Au _size;
+    Math::Vec2Au _size;
 
     Prose(ProseStyle style, Str str = "") : _style(style) {
         clear();
@@ -228,7 +231,7 @@ export struct Prose : Meta::Pinned {
         append(str);
     }
 
-    Vec2Au size() const {
+    Math::Vec2Au size() const {
         return _size;
     }
 
@@ -370,7 +373,7 @@ export struct Prose : Meta::Pinned {
             Glyph prev = Glyph::TOFU;
             for (auto& cell : block.cells()) {
                 if (not first)
-                    adv += Au{_style.font.kern(prev, cell.glyph)};
+                    adv += Math::Au{_style.font.kern(prev, cell.glyph)};
                 else
                     first = false;
 
@@ -384,12 +387,12 @@ export struct Prose : Meta::Pinned {
         }
     }
 
-    void _wrapLines(Au width) {
+    void _wrapLines(Math::Au width) {
         _lines.clear();
 
         Line line{this, {}, {}};
         bool first = true;
-        Au adv = 0_au;
+        Math::Au adv = 0_au;
         for (usize i = 0; i < _blocks.len(); i++) {
             auto& block = _blocks[i];
             if (adv + block.width > width and _style.wordwrap and _style.multiline and not first) {
@@ -428,23 +431,29 @@ export struct Prose : Meta::Pinned {
         _lines.pushBack(line);
     }
 
-    Au _layoutVerticaly() {
+    Math::Au _layoutVerticaly() {
         auto m = _style.font.metrics();
 
         // NOTE: applying ceiling so fonts are pixel aligned
         f64 halfFontLineGap = m.linegap / 2;
-        Au fontAscent = Au{Math::ceil(m.ascend + halfFontLineGap)};
-        Au fontDescend = Au{Math::ceil(m.descend + halfFontLineGap)};
+        Math::Au fontAscent = Math::Au{Math::ceil(m.ascend + halfFontLineGap)};
+        Math::Au fontDescend = Math::Au{Math::ceil(m.descend + halfFontLineGap)};
 
-        Au currHeight = 0_au;
+        Math::Au currHeight = 0_au;
         for (auto& line : _lines) {
-            Au lineTop = currHeight;
+            Math::Au lineTop = currHeight;
 
-            Au maxAscent = 0_au;
-            Au maxDescend = 0_au;
+            Math::Au maxAscent = 0_au;
+            Math::Au maxDescend = 0_au;
+
+            if (not _style.collapseEmptyLines) {
+                maxAscent = fontAscent;
+                maxAscent = fontDescend;
+            }
+
             for (auto const& block : line.blocks()) {
                 if (block.strut()) {
-                    Au baseline{block.strut()->baseline};
+                    Math::Au baseline{block.strut()->baseline};
                     maxAscent = max(maxAscent, baseline);
                     maxDescend = max(maxDescend, block.strut()->size.y - baseline);
                 } else {
@@ -460,13 +469,13 @@ export struct Prose : Meta::Pinned {
         return currHeight;
     }
 
-    Au _layoutHorizontaly(Au width) {
-        Au maxWidth = 0_au;
+    Math::Au _layoutHorizontaly(Math::Au width) {
+        Math::Au maxWidth = 0_au;
         for (auto& line : _lines) {
             if (not line.blockRange.any())
                 continue;
 
-            Au pos = 0_au;
+            Math::Au pos = 0_au;
             for (auto& block : line.blocks()) {
                 block.pos = pos;
                 pos += block.width;
@@ -483,7 +492,7 @@ export struct Prose : Meta::Pinned {
 
             case TextAlign::CENTER:
                 for (auto& block : line.blocks())
-                    block.pos += free / 2_au;
+                    block.pos += free / 2;
                 break;
 
             case TextAlign::RIGHT:
@@ -496,7 +505,7 @@ export struct Prose : Meta::Pinned {
         return maxWidth;
     }
 
-    Vec2Au layout(Au width) {
+    Math::Vec2Au layout(Math::Au width) {
         if (isEmpty(_blocks))
             return {};
 
@@ -568,7 +577,7 @@ export struct Prose : Meta::Pinned {
         return {li, bi, ci};
     }
 
-    Vec2Au queryPosition(usize runeIndex) const {
+    Math::Vec2Au queryPosition(usize runeIndex) const {
         auto [li, bi, ci] = lbcAt(runeIndex);
 
         if (isEmpty(_lines))
@@ -587,12 +596,67 @@ export struct Prose : Meta::Pinned {
         if (ci >= block.cells().len()) {
             // Handle the case where the rune is the last of the text
             auto& cell = last(block.cells());
-            return {block.pos + cell.pos + cell.adv, cell.Yposition(line.baseline)};
+            return {block.pos + cell.pos + cell.adv, cell.yPosition(line.baseline)};
         }
 
         auto& cell = block.cells()[ci];
 
-        return {block.pos + cell.pos, cell.Yposition(line.baseline)};
+        return {block.pos + cell.pos, cell.yPosition(line.baseline)};
+    }
+
+    // MARK: Hit Testing -------------------------------------------------------
+
+    usize hitTest(Math::Vec2Au point) const {
+        if (isEmpty(_lines))
+            return 0;
+
+        Math::Au fontAscent = Math::Au{_lineHeight};
+
+        // Find the line containing the y coordinate
+        usize li = _lines.len() - 1;
+        for (usize i = 0; i + 1 < _lines.len(); i++) {
+            Math::Au nextLineTop = _lines[i + 1].baseline - fontAscent;
+            if (point.y < nextLineTop) {
+                li = i;
+                break;
+            }
+        }
+
+        auto& line = _lines[li];
+
+        if (isEmpty(line.blocks()))
+            return line.runeRange.start;
+
+        // Find the block closest to the x coordinate
+        usize bi = 0;
+        for (usize i = 0; i < line.blocks().len(); i++) {
+            auto& block = line.blocks()[i];
+            if (point.x < block.pos + block.width) {
+                bi = i;
+                break;
+            }
+            bi = i;
+        }
+
+        auto& block = line.blocks()[bi];
+
+        if (isEmpty(block.cells()))
+            return block.runeRange.start;
+
+        // Find the cell closest to the x coordinate
+        for (auto& cell : block.cells()) {
+            Math::Au cellMid = block.pos + cell.pos + cell.adv / 2;
+            if (point.x < cellMid)
+                return cell.runeRange.start;
+        }
+
+        // Past the last cell — return end of block
+        auto& lastCell = last(block.cells());
+        return lastCell.runeRange.end();
+    }
+
+    void repr(Io::Emit& e) const {
+        e("(prose)");
     }
 };
 

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.string;
 
@@ -227,15 +227,20 @@ export template <
     typename E = typename S::Encoding,
     typename U = typename E::Unit>
 auto iterRunes(S const& slice) {
-    Cursor<U> cursor(slice);
-    return Iter([cursor] mutable -> Opt<Rune> {
-        if (cursor.ended()) {
-            return NONE;
-        }
+    struct Iter {
+        Cursor<U> cursor;
 
-        Rune r;
-        return E::decodeUnit(r, cursor) ? Opt<Rune>(r) : Opt<Rune>(NONE);
-    });
+        always_inline constexpr Opt<Rune> next() {
+            if (cursor.ended()) {
+                return NONE;
+            }
+
+            Rune r;
+            return E::decodeUnit(r, cursor) ? Opt<Rune>(r) : Opt<Rune>(NONE);
+        }
+    };
+
+    return Iter{slice};
 }
 
 export template <StaticEncoding E>
@@ -263,10 +268,14 @@ bool eqCi(_Str<E> a, _Str<E> b) {
     return true;
 }
 
-export template <StaticEncoding Target, StaticEncoding Source>
+export bool eqAsciiCi(Rune a, Rune b) {
+    return toAsciiLower(a) == toAsciiLower(b);
+}
+
+export template <StaticEncoding Target = Utf8, StaticEncoding Source>
 _String<Target> transcode(_Str<Source> str) {
     usize len = transcodeLen<Source, Target>(str);
-    typename Target::Unit* buf = new typename Target::Unit[len + 1];
+    typename Target::Unit* buf = new Target::Unit[len + 1];
     buf[len] = '\0';
 
     Cursor<typename Source::Unit> input = str;
@@ -361,7 +370,33 @@ struct _StringBuilder {
 
 export using StringBuilder = _StringBuilder<Utf8>;
 
+export template <StaticEncoding E>
+_String<E> toLower(_Str<E> s) {
+    StringBuilder sb{s.len()};
+    for (auto r : iterRunes(s))
+        sb.append(toAsciiLower(r));
+    return sb.take();
+}
+
+export template <StaticEncoding E>
+_String<E> toUpper(_Str<E> s) {
+    StringBuilder sb{s.len()};
+    for (auto r : iterRunes(s))
+        sb.append(toUpper(r));
+    return sb.take();
+}
+
+export [[noreturn]] void panic(Str msg) {
+    panic(msg.buf(), msg.len());
+}
+
+export void debug(Str msg) {
+    debug(msg.buf(), msg.len());
+}
+
 } // namespace Karm
+
+namespace Karm::Literals {
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wuser-defined-literals"
@@ -379,3 +414,5 @@ export constexpr Karm::_Str<Karm::Utf16> operator""_s16(char16_t const* buf, Kar
 }
 
 #pragma clang diagnostic pop
+
+} // namespace Karm::Literals

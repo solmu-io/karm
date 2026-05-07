@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Gfx:buffer;
 
@@ -234,7 +234,12 @@ struct _Pixels {
     }
 
     always_inline Color sample(Math::Vec2f pos) const {
-        return load(Math::Vec2i(pos.x * width(), pos.y * height()));
+        return load(
+            Math::Vec2i(
+                Math::roundi(pos.x * width()),
+                Math::roundi(pos.y * height())
+            )
+        );
     }
 
     always_inline void clear(Color color)
@@ -264,7 +269,7 @@ export using MutPixels = _Pixels<true>;
 // MARK: Surface --------------------------------------------------------------
 
 export struct Surface {
-    Buf<u8> _buf;
+    Vec<u8> _buf;
     Math::Vec2i _size;
     usize _stride;
     Gfx::Fmt _fmt;
@@ -325,7 +330,15 @@ export [[gnu::flatten]] void blitUnsafe(MutPixels dst, Pixels src) {
 
     // HACK: fast path if the stride and fmt are the same
     if (dst.stride() == src.stride() and dst.fmt().index() == src.fmt().index()) {
-        std::memcpy(dst._buf, src._buf, src._stride * src.height() * sizeof(u8));
+        usize bytesPerRow = dst.width() * dst.fmt().bpp();
+
+        if (dst.stride() == bytesPerRow) {
+            std::memcpy(dst._buf, src._buf, dst.stride() * dst.height());
+        } else {
+            for (isize y = 0; y < dst.height(); y++)
+                std::memcpy(dst.pixelUnsafe({0, y}), src.pixelUnsafe({0, y}), bytesPerRow);
+        }
+
         return;
     }
 

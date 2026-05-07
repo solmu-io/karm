@@ -1,0 +1,9 @@
+{
+    "$schema": "https://schemas.cute.engineering/stable/cutekit.manifest.component.v1",
+    "id": "gguf-dump",
+    "type": "exe",
+    "requires": [
+        "karm-ml",
+        "karm-sys"
+    ]
+}

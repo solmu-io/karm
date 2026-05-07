@@ -1,0 +1,17 @@
+#pragma once
+
+#ifdef __KARM_SYS_ENTRY_INCLUDED
+#    error "karm/entry included twice"
+#endif
+
+#define __KARM_SYS_ENTRY_INCLUDED
+
+import Karm.Core;
+import Karm.Ref;
+import Karm.Sys;
+
+#include <karm/macros>
+
+[[gnu::used]] Karm::Async::Task<> entryPointAsync(Karm::Sys::Env&, Karm::Async::CancellationToken ct);
+
+#include "__entry.h"

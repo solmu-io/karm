@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Fs:node;
 
@@ -92,6 +92,10 @@ export struct Node {
 
     virtual Async::Task<> syncAsync() {
         co_return Ok();
+    }
+
+    virtual Res<Rc<Sys::Fd>> underlying() {
+        return Error::unsupported();
     }
 };
 

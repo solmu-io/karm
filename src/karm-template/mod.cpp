@@ -1,10 +1,12 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Template;
 
 import Karm.Core;
+
+using namespace Karm::Re::Literals;
 
 namespace Karm::Template {
 

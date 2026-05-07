@@ -127,7 +127,7 @@ export struct CpuCanvas : Canvas {
 
                 auto* pixel = mutPixels().pixelUnsafe(frag.xy);
                 auto color = fill.sample(frag.uv);
-                color.alpha *= frag.a * (mask / 255.0) * opacity;
+                color.alpha = Math::roundi(color.alpha * frag.a * (mask / 255.0) * opacity);
                 auto c = format.load(pixel);
                 c = color.blendOver(c);
                 format.store(pixel, c);
@@ -136,7 +136,7 @@ export struct CpuCanvas : Canvas {
             _rast.fill(_poly, current().clip, fillRule, [&](CpuRast::Frag frag) {
                 auto* pixel = mutPixels().pixelUnsafe(frag.xy);
                 auto color = fill.sample(frag.uv);
-                color.alpha *= frag.a * opacity;
+                color.alpha = Math::roundi(color.alpha * frag.a * opacity);
                 auto c = format.load(pixel);
                 c = color.blendOver(c);
                 format.store(pixel, c);
@@ -159,7 +159,7 @@ export struct CpuCanvas : Canvas {
 
                     auto pixel = mutPixels().pixelUnsafe(frag.xy);
                     auto color = fill.sample(frag.uv);
-                    color.alpha *= frag.a * (mask / 255.0) * opacity;
+                    color.alpha = Math::roundi(color.alpha * frag.a * (mask / 255.0) * opacity);
                     auto c = format.load(pixel);
                     c = color.blendOverComponent(c, comp);
                     format.store(pixel, c);
@@ -168,7 +168,7 @@ export struct CpuCanvas : Canvas {
                 _rast.fill(_poly, current().clip, fillRule, [&](CpuRast::Frag frag) {
                     auto pixel = mutPixels().pixelUnsafe(frag.xy);
                     auto color = fill.sample(frag.uv);
-                    color.alpha *= frag.a * opacity;
+                    color.alpha = Math::roundi(color.alpha * frag.a * opacity);
                     auto c = format.load(pixel);
                     c = color.blendOverComponent(c, comp);
                     format.store(pixel, c);
@@ -255,6 +255,7 @@ export struct CpuCanvas : Canvas {
         _poly.clear();
         createSolid(_poly, _path);
         _poly.transform(current().trans);
+        _poly.sortForAet();
         _fill(current().fill, rule);
     }
 
@@ -262,6 +263,7 @@ export struct CpuCanvas : Canvas {
         _poly.clear();
         createStroke(_poly, _path, current().stroke);
         _poly.transform(current().trans);
+        _poly.sortForAet();
         _fill(current().stroke.fill);
     }
 
@@ -269,6 +271,7 @@ export struct CpuCanvas : Canvas {
         _poly.clear();
         createSolid(_poly, _path);
         _poly.transform(current().trans);
+        _poly.sortForAet();
 
         auto clipBound = _poly.bound().ceil().cast<isize>().clipTo(current().clip);
 
@@ -277,7 +280,7 @@ export struct CpuCanvas : Canvas {
         current().clip = clipBound;
         _rast.fill(_poly, current().clip, rule, [&](CpuRast::Frag frag) {
             u8 const parentPixel = current().clipMask.has() ? current().clipMask.unwrap()->pixels().load(frag.xy - current().clipBound.xy).red : 255;
-            newClipMask->mutPixels().store(frag.xy - clipBound.xy, Color::fromRgb(parentPixel * frag.a, 0, 0));
+            newClipMask->mutPixels().store(frag.xy - clipBound.xy, Color::fromRgb(Math::roundi(parentPixel * frag.a), 0, 0));
         });
 
         current().clipMask = newClipMask;
@@ -315,7 +318,9 @@ export struct CpuCanvas : Canvas {
         bool isSuitableForFastFill =
             radii.zero() and
             current().fill.is<Color>() and
-            current().trans.isIdentity();
+            current().trans.isAxisAligned() and
+            not current().clipMask.has() and
+            current().opacity > 0.99;
 
         if (isSuitableForFastFill) {
             _fillRect(r, current().fill.unwrap<Color>());
@@ -333,7 +338,7 @@ export struct CpuCanvas : Canvas {
     }
 
     void clip(Math::Rectf r) override {
-        if (current().trans.simple()) {
+        if (current().trans.isAxisAligned()) {
             r = current().trans.apply(r).bound();
             current().clip = r.cast<isize>().clipTo(current().clip);
             return;
@@ -348,6 +353,7 @@ export struct CpuCanvas : Canvas {
         _poly.clear();
         createStroke(_poly, path, current().stroke);
         _poly.transform(current().trans);
+        _poly.sortForAet();
         _fill(current().stroke.fill);
     }
 
@@ -355,6 +361,7 @@ export struct CpuCanvas : Canvas {
         _poly.clear();
         createSolid(_poly, path);
         _poly.transform(current().trans);
+        _poly.sortForAet();
         _fill(current().fill, rule);
     }
 

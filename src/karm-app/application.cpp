@@ -9,6 +9,8 @@ import Karm.App.Base;
 import Karm.Logger;
 import :_embed;
 
+using namespace Karm::Literals;
+
 namespace Karm::App {
 
 export using WindowId = Distinct<usize, struct WindowIdTag>;
@@ -48,7 +50,7 @@ export struct Window : Meta::Pinned {
 
     virtual void releaseSurface(Slice<Math::Recti> dirty) = 0;
 
-    virtual void drag(DragEvent) {
+    virtual void drag() {
         logWarn("Window::drag() not implemented");
     }
 
@@ -91,8 +93,8 @@ export struct Application : Meta::Pinned {
     virtual ~Application() = default;
 
     [[clang::coro_wrapper]]
-    static Async::Task<Rc<Application>> createAsync(Sys::Context& ctx, ApplicationProps const& props, Async::CancellationToken ct) {
-        return _Embed::createAppAsync(ctx, props, ct);
+    static Async::Task<Rc<Application>> createAsync(Sys::Env& env, ApplicationProps const& props, Async::CancellationToken ct) {
+        return _Embed::createAppAsync(env, props, ct);
     }
 
     virtual Async::Task<Rc<Window>> createWindowAsync(WindowProps const& props, Async::CancellationToken ct) = 0;

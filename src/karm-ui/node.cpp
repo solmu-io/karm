@@ -8,6 +8,11 @@ import Karm.Math;
 
 namespace Karm::Ui {
 
+using Math::Au;
+using Math::InsetsAu;
+using Math::RectAu;
+using Math::Vec2Au;
+
 export enum struct Hint {
     MIN,
     PREFERRED,
@@ -46,6 +51,9 @@ struct Node : App::Dispatch {
 
     struct AnimateEvent {
         f64 dt;
+    };
+
+    struct RebuiltEvent {
     };
 
     Key key() const {

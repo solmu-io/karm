@@ -1,11 +1,14 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Http:header;
 
 import Karm.Core;
 import Karm.Ref;
+
+using namespace Karm::Literals;
+using namespace Karm::Re::Literals;
 
 namespace Karm::Http {
 
@@ -109,21 +112,21 @@ export struct Header : Map<Symbol, String> {
     }
 
     Res<> unparse(Io::TextWriter& w) const {
-        for (auto& [key, value] : iterUnordered()) {
+        for (auto const& [key, value] : iterItems()) {
             try$(Io::format(w, "{}: {}\r\n", key, value));
         }
         return Ok();
     }
 
-    Opt<usize> contentLength() {
-        if (auto value = tryGet(CONTENT_LENGTH))
+    Opt<usize> contentLength() const {
+        if (auto value = lookup(CONTENT_LENGTH))
             return Io::atou(value->str());
         return NONE;
     }
 
-    Opt<Ref::Mime> contentType() {
-        if (auto value = tryGet(CONTENT_TYPE))
-            return Ref::Mime{value->str()};
+    Opt<Ref::Uti> contentType() const {
+        if (auto value = lookup(CONTENT_TYPE))
+            return Ref::Uti::fromMime(Ref::Mime{value->str()});
         return NONE;
     }
 };

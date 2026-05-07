@@ -1,4 +1,4 @@
-#include <karm-test/macros.h>
+#include <karm/test>
 
 import Karm.Sys;
 import Karm.Logger;
@@ -13,11 +13,16 @@ Async::Task<> bigSleptAsync(Rc<bool> pass, Async::CancellationToken ct) {
 }
 
 testAsync$("async-cancellation") {
+#ifdef __ck_async_epoll__
+    logInfo("skipping test on epoll");
+    co_return Error::skipped();
+#endif
+
     Rc<bool> pass = makeRc<bool>(false);
     bool finished = false;
     Async::Cancellation sleepCancel;
     co_try$(sleepCancel.attach(ct));
-    Async::detach(bigSleptAsync(pass, sleepCancel.token()), [&] (auto&) {
+    Async::detach(bigSleptAsync(pass, sleepCancel.token()), [&](auto&) {
         finished = true;
     });
     sleepCancel.cancel();

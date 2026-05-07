@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:io.text;
 
@@ -38,7 +38,6 @@ struct TextEncoder : TextWriter {
 
 export template <StaticEncoding E>
 struct _StringWriter : TextWriter, _StringBuilder<E> {
-
     _StringWriter(usize cap = 16) : _StringBuilder<E>(cap) {}
 
     Res<> writeRune(Rune rune) override {

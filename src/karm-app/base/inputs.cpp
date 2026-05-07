@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.App.Base:inputs;
 
@@ -117,8 +117,12 @@ export struct Key {
         return "INVALID";
     }
 
-    Code code() {
+    Code code() const {
         return _code;
+    }
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, _code);
     }
 
     bool operator==(Key const& other) const = default;
@@ -166,13 +170,8 @@ export struct KeyboardEvent {
     /// The scancode of the key that was pressed or released
     /// This value is independent of the current keyboard layout
     Key code;
-
     Flags<KeyMod> mods = {};
-};
-
-export struct TypeEvent {
-    Rune rune;
-    Flags<KeyMod> mods = {};
+    Rune rune = '\0';
 };
 
 // MARK: Mouse -----------------------------------------------------------------
@@ -201,11 +200,11 @@ export struct MouseEvent {
     Math::Vec2f scroll{};
     Math::Vec2i delta{};
     Flags<MouseButton> buttons{};
-    KeyMod mods{};
+    Flags<KeyMod> mods{};
     MouseButton button{};
 
     bool pressed(Flags<MouseButton> button) const {
-        return buttons & button;
+        return button.any(buttons);
     }
 
     bool released(MouseButton button) const {

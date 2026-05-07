@@ -21,9 +21,9 @@ export Ui::Child input(Gfx::Icon icon, String placeholder, String text, Ui::Send
                .padding = {6, 12, 6, 12},
                .borderRadii = 4,
                .borderWidth = 1,
-               .borderFill = Ui::GRAY800,
+               .borderFill = Ui::GRAY700,
            }) |
-           Ui::minSize({Ui::UNCONSTRAINED, 36}) |
+           Ui::minSize({Ui::UNCONSTRAINED, 32}) |
            Ui::focusable();
 }
 
@@ -40,9 +40,9 @@ export Ui::Child input(String placeholder, String text, Ui::Send<String> onChang
                .padding = {6, 12, 6, 12},
                .borderRadii = 4,
                .borderWidth = 1,
-               .borderFill = Ui::GRAY800,
+               .borderFill = Ui::GRAY700,
            }) |
-           Ui::minSize({Ui::UNCONSTRAINED, 36}) |
+           Ui::minSize({Ui::UNCONSTRAINED, 32}) |
            Ui::focusable();
 }
 

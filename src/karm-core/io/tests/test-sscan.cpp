@@ -1,5 +1,8 @@
-#include <karm-test/macros.h>
+#include <karm/test>
+
 import Karm.Core;
+
+using namespace Karm::Literals;
 
 namespace Karm::Io::Tests {
 

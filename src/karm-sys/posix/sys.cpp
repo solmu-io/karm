@@ -6,6 +6,7 @@ module;
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <pty.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -19,80 +20,15 @@ module;
 #include <unistd.h>
 
 //
-#include <karm-core/macros.h>
-
-#include "fd.h"
-#include "utils.h"
+#include <karm/macros>
 
 module Karm.Sys;
 
 import Karm.Core;
 import Karm.Ref;
+import Karm.Sys.Posix;
 
 namespace Karm::Sys::_Embed {
-
-Res<Ref::Path> resolve(Ref::Url const& url) {
-    Ref::Path resolved;
-    if (url.scheme == "file") {
-        resolved = url.path;
-    } else if (url.scheme == "fd") {
-        if (url.path == "stdin"_path) {
-            resolved = "/dev/stdin"_path;
-        } else if (url.path == "stdout"_path) {
-            resolved = "/dev/stdout"_path;
-        } else if (url.path == "stderr"_path) {
-            resolved = "/dev/stderr"_path;
-        } else {
-            return Error::notFound("unknown fd");
-        }
-    } else if (url.scheme == "ipc") {
-        auto const* runtimeDir = getenv("XDG_RUNTIME_DIR");
-        if (not runtimeDir) {
-            runtimeDir = "/tmp/";
-            Sys::errln("XDG_RUNTIME_DIR not set, falling back on {}", runtimeDir);
-        }
-
-        auto path = url.path;
-        path.rooted = false;
-
-        resolved = Ref::Path::parse(runtimeDir).join(path);
-    } else if (url.scheme == "bundle") {
-        auto [repo, format] = try$(Posix::repoRoot());
-
-        auto path = url.path;
-        path.rooted = false;
-
-        if (format == Posix::RepoType::CUTEKIT) {
-            resolved = Ref::Path::parse(repo)
-                           .join(url.host.str())
-                           .join("__res__")
-                           .join(path);
-        } else if (format == Posix::RepoType::PREFIX) {
-            resolved = Ref::Path::parse(repo)
-                           .join("share")
-                           .join(url.host.str())
-                           .join(path);
-        } else {
-            return Error::notFound("unknown repo type");
-        }
-    } else if (url.scheme == "location") {
-        auto* maybeHome = getenv("HOME");
-        if (not maybeHome)
-            return Error::notFound("HOME not set");
-
-        auto path = url.path;
-        path.rooted = false;
-
-        if (url.host == "home")
-            resolved = Ref::Path::parse(maybeHome).join(path);
-        else
-            resolved = Ref::Path::parse(maybeHome).join(Io::toPascalCase(url.host.str()).unwrap()).join(path);
-    } else {
-        return Error::notFound("unknown url scheme");
-    }
-
-    return Ok(resolved);
-}
 
 // MARK: Fd --------------------------------------------------------------------
 
@@ -102,31 +38,33 @@ Res<Rc<Sys::Fd>> deserializeFd(Serde::Deserializer&) {
 
 // MARK: File I/O --------------------------------------------------------------
 
-Res<Rc<Fd>> openFile(Ref::Url const& url) {
-    String str = try$(resolve(url)).str();
+Res<Rc<Fd>> openFile(Ref::Url const& url, Flags<OpenOption> options) {
 
-    isize raw = ::open(str.buf(), O_RDONLY);
-    if (raw < 0)
-        return Posix::fromLastErrno();
-    auto fd = makeRc<Posix::Fd>(raw);
-    if (try$(fd->stat()).type == Type::DIR)
-        return Error::isADirectory();
-    return Ok(fd);
-}
+    i32 flags = 0;
+    if (options.has({OpenOption::READ, OpenOption::WRITE}))
+        flags |= O_RDWR;
+    else if (options.has({OpenOption::READ}))
+        flags |= O_RDONLY;
+    else if (options.has({OpenOption::WRITE}))
+        flags |= O_WRONLY;
+    else
+        return Error::invalidInput("file must be open in either a readable or writable mode");
 
-Res<Rc<Fd>> createFile(Ref::Url const& url) {
-    String str = try$(resolve(url)).str();
+    if (options.has({OpenOption::CREATE}))
+        flags |= O_CREAT;
 
-    auto raw = ::open(str.buf(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (raw < 0)
-        return Posix::fromLastErrno();
-    return Ok(makeRc<Posix::Fd>(raw));
-}
+    if (options.has(OpenOption::CREATE_NEW))
+        flags |= O_EXCL;
 
-Res<Rc<Fd>> openOrCreateFile(Ref::Url const& url) {
-    String str = try$(resolve(url)).str();
+    if (options.has(OpenOption::APPEND))
+        flags |= O_APPEND;
 
-    auto raw = ::open(str.buf(), O_RDWR | O_CREAT, 0644);
+    if (options.has(OpenOption::TRUNCATE))
+        flags |= O_TRUNC;
+
+    String str = try$(Posix::resolve(url)).str();
+
+    isize raw = ::open(str.buf(), flags, 0666);
     if (raw < 0)
         return Posix::fromLastErrno();
     auto fd = makeRc<Posix::Fd>(raw);
@@ -166,7 +104,7 @@ Res<Rc<Fd>> createErr() {
 }
 
 Res<Vec<DirEntry>> readDir(Ref::Url const& url) {
-    String str = try$(resolve(url)).str();
+    String str = try$(Posix::resolve(url)).str();
 
     DIR* dir = ::opendir(str.buf());
     if (not dir)
@@ -196,7 +134,7 @@ Res<Vec<DirEntry>> readDir(Ref::Url const& url) {
 }
 
 Res<> createDir(Ref::Url const& url) {
-    String str = try$(resolve(url)).str();
+    String str = try$(Posix::resolve(url)).str();
 
     if (::mkdir(str.buf(), 0755) < 0) {
         if (errno == EEXIST) {
@@ -209,7 +147,7 @@ Res<> createDir(Ref::Url const& url) {
 }
 
 Res<Vec<Sys::DirEntry>> readDirOrCreate(Ref::Url const& url) {
-    String str = try$(resolve(url)).str();
+    String str = try$(Posix::resolve(url)).str();
 
     DIR* dir = ::opendir(str.buf());
     Defer _{[&]() {
@@ -245,7 +183,7 @@ Res<Vec<Sys::DirEntry>> readDirOrCreate(Ref::Url const& url) {
 }
 
 Res<Stat> stat(Ref::Url const& url) {
-    String str = try$(resolve(url)).str();
+    String str = try$(Posix::resolve(url)).str();
     struct stat buf;
     if (::stat(str.buf(), &buf) < 0)
         return Posix::fromLastErrno();
@@ -260,7 +198,7 @@ Res<> launch(Intent intent) {
 
     auto [url, _] = intent.objects[0];
 
-    String str = try$(resolve(url)).str();
+    String str = try$(Posix::resolve(url)).str();
 
     int pid = fork();
     if (pid < 0)
@@ -314,7 +252,7 @@ struct PosixPid : Sys::Pid {
     }
 };
 
-Res<Rc<Pid>> run(Command const& cmd) {
+Res<Rc<Pid>> spawn(Command const& cmd) {
     if (not cmd.exe or cmd.exe.len() == 0)
         return Error::invalidInput("no executable provided");
 
@@ -328,7 +266,7 @@ Res<Rc<Pid>> run(Command const& cmd) {
     auto buildEnvp = [&](Vec<String>& kvStore, Vec<char*>& envp) {
         kvStore.clear();
         envp.clear();
-        for (auto const& [key, val] : cmd.env.iterUnordered()) {
+        for (auto const& [key, val] : cmd.env.iterItems()) {
             kvStore.pushBack(Io::format("{}={}", key, val));
         }
         for (auto& kv : kvStore)
@@ -338,15 +276,15 @@ Res<Rc<Pid>> run(Command const& cmd) {
 
     int inFd = -1;
     if (cmd.in)
-        inFd = try$(Posix::toPosixFd(cmd.in.unwrap()))->_raw;
+        inFd = try$(Posix::ensurePosixFd(cmd.in.unwrap()))->_raw;
 
     int outFd = -1;
     if (cmd.out)
-        outFd = try$(Posix::toPosixFd(cmd.out.unwrap()))->_raw;
+        outFd = try$(Posix::ensurePosixFd(cmd.out.unwrap()))->_raw;
 
     int errFd = -1;
     if (cmd.err)
-        errFd = try$(Posix::toPosixFd(cmd.err.unwrap()))->_raw;
+        errFd = try$(Posix::ensurePosixFd(cmd.err.unwrap()))->_raw;
 
     pid_t pid = ::fork();
     if (pid < 0)
@@ -388,6 +326,60 @@ Res<Rc<Pid>> run(Command const& cmd) {
     return Ok(makeRc<PosixPid>(pid));
 }
 
+Res<Tuple<Rc<Pid>, Rc<Fd>>> spawnPty(Command const& cmd) {
+    if (not cmd.exe or cmd.exe.len() == 0)
+        return Error::invalidInput("no executable provided");
+
+    auto buildArgv = [&](Vec<char*>& argv) {
+        argv.pushBack(const_cast<char*>(cmd.exe.buf())); // argv[0]
+        for (auto const& arg : cmd.args)
+            argv.pushBack(const_cast<char*>(arg.buf()));
+        argv.pushBack(nullptr);
+    };
+
+    auto buildEnvp = [&](Vec<String>& kvStore, Vec<char*>& envp) {
+        kvStore.clear();
+        envp.clear();
+        for (auto const& [key, val] : cmd.env.iterItems()) {
+            kvStore.pushBack(Io::format("{}={}", key, val));
+        }
+        for (auto& kv : kvStore)
+            envp.pushBack(const_cast<char*>(kv.buf()));
+        envp.pushBack(nullptr);
+    };
+
+    int pty = -1;
+    pid_t pid = ::forkpty(&pty, nullptr, nullptr, nullptr);
+    ArmedDefer deferClose = [&] {
+        if (pty != -1)
+            close(pty);
+    };
+    if (pid < 0)
+        return Posix::fromLastErrno();
+
+    if (pid == 0) {
+        Vec<char*> argv;
+        buildArgv(argv);
+
+        if (cmd.env.len()) {
+            Vec<String> kvStore;
+            Vec<char*> envp;
+            buildEnvp(kvStore, envp);
+            ::execve(cmd.exe.buf(), argv.buf(), envp.buf());
+        } else {
+            ::execvp(cmd.exe.buf(), argv.buf());
+        }
+
+        _exit(127); // exec failed
+    }
+
+    deferClose.disarm();
+    return Ok<Tuple<Rc<Pid>, Rc<Fd>>>(
+        makeRc<PosixPid>(pid),
+        makeRc<Posix::Fd>(pty)
+    );
+}
+
 // MARK: Sockets ---------------------------------------------------------------
 
 Res<Rc<Fd>> listenUdp(SocketAddr addr) {
@@ -395,9 +387,9 @@ Res<Rc<Fd>> listenUdp(SocketAddr addr) {
     if (fd < 0)
         return Posix::fromLastErrno();
 
-    struct sockaddr_in addr_ = Posix::toSockAddr(addr);
+    sockaddr_in addr_ = Posix::toSockAddr(addr);
 
-    if (::bind(fd, (struct sockaddr*)&addr_, sizeof(addr_)) < 0)
+    if (::bind(fd, (sockaddr*)&addr_, sizeof(addr_)) < 0)
         return Posix::fromLastErrno();
 
     return Ok(makeRc<Posix::Fd>(fd));
@@ -408,8 +400,8 @@ Res<Rc<Fd>> connectTcp(SocketAddr addr) {
     if (fd < 0)
         return Posix::fromLastErrno();
 
-    struct sockaddr_in addr_ = Posix::toSockAddr(addr);
-    if (::connect(fd, (struct sockaddr*)&addr_, sizeof(addr_)) < 0)
+    sockaddr_in addr_ = Posix::toSockAddr(addr);
+    if (::connect(fd, (sockaddr*)&addr_, sizeof(addr_)) < 0)
         return Posix::fromLastErrno();
 
     return Ok(makeRc<Posix::Fd>(fd));
@@ -424,12 +416,29 @@ Res<Rc<Fd>> listenTcp(SocketAddr addr) {
     if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
         return Posix::fromLastErrno();
 
-    struct sockaddr_in addr_ = Posix::toSockAddr(addr);
+    sockaddr_in addr_ = Posix::toSockAddr(addr);
 
-    if (::bind(fd, (struct sockaddr*)&addr_, sizeof(addr_)) < 0)
+    if (::bind(fd, (sockaddr*)&addr_, sizeof(addr_)) < 0)
         return Posix::fromLastErrno();
 
     if (::listen(fd, 128) < 0)
+        return Posix::fromLastErrno();
+
+    return Ok(makeRc<Posix::Fd>(fd));
+}
+
+Res<Rc<Fd>> connectIpc(Ref::Url url) {
+    int fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+        return Posix::fromLastErrno();
+
+    sockaddr_un addr = {};
+    addr.sun_family = AF_UNIX;
+    String path = try$(Posix::resolve(url)).str();
+    auto sunPath = MutSlice(addr.sun_path, sizeof(addr.sun_path) - 1);
+    copy(sub(path), sunPath);
+
+    if (::connect(fd, (sockaddr*)&addr, sizeof(addr)) < 0)
         return Posix::fromLastErrno();
 
     return Ok(makeRc<Posix::Fd>(fd));
@@ -440,13 +449,13 @@ Res<Rc<Fd>> listenIpc(Ref::Url url) {
     if (fd < 0)
         return Posix::fromLastErrno();
 
-    struct sockaddr_un addr = {};
+    sockaddr_un addr = {};
     addr.sun_family = AF_UNIX;
-    String path = try$(resolve(url)).str();
+    String path = try$(Posix::resolve(url)).str();
     auto sunPath = MutSlice(addr.sun_path, sizeof(addr.sun_path) - 1);
     copy(sub(path), sunPath);
 
-    if (::bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+    if (::bind(fd, (sockaddr*)&addr, sizeof(addr)) < 0)
         return Posix::fromLastErrno();
 
     if (::listen(fd, 128) < 0)
@@ -457,25 +466,25 @@ Res<Rc<Fd>> listenIpc(Ref::Url url) {
 
 // MARK: Time ------------------------------------------------------------------
 
-Duration fromTimeSpec(struct timespec const& ts) {
+Duration fromTimeSpec(timespec const& ts) {
     auto usecs = (u64)ts.tv_sec * 1000000 + (u64)ts.tv_nsec / 1000;
     return Duration::fromUSecs(usecs);
 }
 
 SystemTime now() {
-    struct timespec ts;
+    timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return SystemTime::epoch() + fromTimeSpec(ts);
 }
 
 Instant instant() {
-    struct timespec ts;
+    timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return Instant::epoch() + fromTimeSpec(ts);
 }
 
 Duration uptime() {
-    struct timespec ts;
+    timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return fromTimeSpec(ts);
 }
@@ -547,7 +556,7 @@ usize pageSize() {
 // MARK: System Information ----------------------------------------------------
 
 Res<> populate(SysInfo& infos) {
-    struct utsname uts;
+    utsname uts;
     if (uname(&uts) < 0)
         return Posix::fromLastErrno();
 
@@ -591,7 +600,7 @@ Res<> populate(Vec<UserInfo>& infos) {
 // MARK: Process Managment -----------------------------------------------------
 
 Res<> sleep(Duration span) {
-    struct timespec ts;
+    timespec ts;
     ts.tv_sec = span.toSecs();
     ts.tv_nsec = (span.toUSecs() % 1000000) * 1000;
     if (nanosleep(&ts, nullptr) < 0)
@@ -608,25 +617,10 @@ Res<> exit(i32 res) {
     return Error::other("reached the afterlife");
 }
 
-Res<Ref::Url> pwd() {
-    auto buf = Buf<char>::init(256);
-    while (true) {
-        if (::getcwd(buf.buf(), buf.len()) != NULL)
-            break;
-
-        if (errno != ERANGE)
-            return Posix::fromLastErrno();
-
-        buf.resize(buf.len() * 2);
-    }
-
-    return Ok(Ref::parseUrlOrPath(Str::fromNullterminated(buf.buf()), "file:"_url));
-}
-
 // MARK: Addr ------------------------------------------------------------------
 
 Async::Task<Vec<Ip>> ipLookupAsync(Str host) {
-    struct addrinfo hints = {};
+    addrinfo hints = {};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
@@ -637,7 +631,7 @@ Async::Task<Vec<Ip>> ipLookupAsync(Str host) {
         co_return Ok(ips);
     }
 
-    struct addrinfo* res;
+    addrinfo* res;
     auto result = getaddrinfo(host.buf(), nullptr, &hints, &res);
     if (result != 0) {
         switch (result) {
@@ -664,10 +658,10 @@ Async::Task<Vec<Ip>> ipLookupAsync(Str host) {
 
     for (auto* p = res; p; p = p->ai_next) {
         if (p->ai_family == AF_INET) {
-            struct sockaddr_in* addr = (struct sockaddr_in*)p->ai_addr;
+            sockaddr_in* addr = (struct sockaddr_in*)p->ai_addr;
             ips.pushBack(Ip4::fromRaw(bswap(addr->sin_addr.s_addr)));
         } else if (p->ai_family == AF_INET6) {
-            struct sockaddr_in6* addr = (struct sockaddr_in6*)p->ai_addr;
+            sockaddr_in6* addr = (struct sockaddr_in6*)p->ai_addr;
             u128 raw = 0;
             u16 const* buf = (u16 const*)addr->sin6_addr.s6_addr;
             for (usize i = 0; i < 8; i++)

@@ -1,10 +1,11 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.distinct;
 
 import :base.base;
+import :base.hash;
 
 namespace Karm {
 
@@ -132,6 +133,10 @@ struct Distinct {
     always_inline constexpr Distinct<T, Tag>& operator>>=(Distinct<T, Tag> other) {
         _value >>= other._value;
         return *this;
+    }
+
+    always_inline void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, _value);
     }
 };
 

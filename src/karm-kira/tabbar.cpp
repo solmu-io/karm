@@ -28,16 +28,15 @@ export Ui::Child tabbarItem(bool selected, Ui::Send<> onSelect, Ui::Child conten
                    onSelect,
                    Ui::ButtonStyle::subtle(),
                    content |
-                       Ui::minSize({Ui::UNCONSTRAINED, 36})
+                       Ui::minSize({Ui::UNCONSTRAINED, 32})
                ) |
                Ui::insets({8, 0});
     }
 
     return Ui::box(
         {
-            .margin = {8, 0, 0, 0},
-            .padding = {0, 0, 8, 0},
-            .borderRadii = {4, 4, 0, 0},
+            .margin = {8, 0},
+            .borderRadii = 4,
             .backgroundFill = Ui::GRAY900,
         },
         content | Ui::bound()

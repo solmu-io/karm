@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.vec;
 
@@ -74,6 +74,8 @@ struct _Vec {
     T removeAt(usize index) { return _buf.removeAt(index); }
 
     void removeRange(usize index, usize count) { _buf.removeRange(index, count); }
+
+    void removeRange(urange range) { _buf.removeRange(range.start, range.size); }
 
     void removeUnordered(usize index) {
         if (index >= len()) [[unlikely]]
@@ -162,6 +164,9 @@ using Vec = _Vec<Buf<T>>;
 
 export template <typename T, usize N>
 using InlineVec = _Vec<InlineBuf<T, N>>;
+
+export template <typename T, usize N>
+using SmallVec = _Vec<SmallBuf<T, N>>;
 
 export template <Nicheable T>
 struct Niche<_Vec<T>> {

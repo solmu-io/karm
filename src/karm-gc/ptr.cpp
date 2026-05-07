@@ -111,6 +111,14 @@ struct Ptr {
     bool operator==(Ptr const& other) const {
         return _ptr == other._ptr;
     }
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, (usize)_ptr);
+    }
+
+    bool operator==(T const* other) const {
+        return _ptr == other;
+    }
 };
 
 export template <typename T>

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Ui:app;
 
@@ -30,7 +30,7 @@ struct RootNode : ProxyNode<RootNode> {
         g.push();
         g.scale(_window->scaleFactor());
         g.clip(r);
-        g.clear(GRAY950);
+        g.clear(GRAY900);
         g.fillStyle(GRAY50);
         child().paint(g, r);
         g.pop();
@@ -46,6 +46,7 @@ struct RootNode : ProxyNode<RootNode> {
 
         if (_shouldLayout) {
             _shouldLayout = false;
+            _shouldAnimate = true;
 
             child().layout(_window->bound().size());
 
@@ -87,8 +88,8 @@ struct RootNode : ProxyNode<RootNode> {
         } else if (auto e = event.is<AnimateEvent>()) {
             _shouldAnimate = true;
             event.accept();
-        } else if (auto e = event.is<App::DragEvent>()) {
-            _window->drag(*e);
+        } else if (event.is<App::DragStartEvent>()) {
+            _window->drag();
             event.accept();
         } else if (auto e = event.is<App::RequestCloseEvent>()) {
             _window->close();
@@ -122,8 +123,8 @@ struct Handler : App::Handler {
     }
 };
 
-export Async::Task<> runAsync(Sys::Context& ctx, Child child, Async::CancellationToken ct) {
-    auto app = co_trya$(App::Application::createAsync(ctx, {}, ct));
+export Async::Task<> runAsync(Sys::Env& env, Child child, Async::CancellationToken ct) {
+    auto app = co_trya$(App::Application::createAsync(env, {}, ct));
     auto size = child->size({1024, 720}, Hint::MIN);
     auto win = co_trya$(app->createWindowAsync(
         {

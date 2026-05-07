@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Sys:socket;
 
@@ -169,10 +169,10 @@ export struct IpcConnection {
     Rc<Sys::Fd> _fd;
     Opt<Ref::Url> _url;
 
-    static constexpr usize MAX_BUF_SIZE = 4096;
-    static constexpr usize MAX_HND_SIZE = 16;
-
-    static Res<IpcConnection> connect(Ref::Url url);
+    static Res<IpcConnection> connect(Ref::Url url) {
+        auto fd = try$(_Embed::connectIpc(url));
+        return Ok(IpcConnection{fd, url});
+    }
 
     IpcConnection(Rc<Sys::Fd> fd, Opt<Ref::Url> url)
         : _fd(std::move(fd)), _url(std::move(url)) {}

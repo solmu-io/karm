@@ -16,6 +16,11 @@ export struct Ref {
 
     bool operator==(Ref const& other) const = default;
     auto operator<=>(Ref const& other) const = default;
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, num);
+        Karm::hash(h, gen);
+    }
 };
 
 export struct Name : String {
@@ -38,7 +43,7 @@ export struct Dict : Map<Name, Value> {
 
 export struct Stream {
     Dict dict;
-    Buf<u8> data;
+    Vec<u8> data;
 
     Res<> write(Io::Writer& writer) const;
 };
@@ -77,15 +82,19 @@ export struct File {
 
 export struct XRef {
     struct Entry {
-        usize offset;
-        usize gen;
-        bool used;
+        usize offset = 0;
+        usize gen = 0;
+        bool used = false;
     };
 
     Vec<Entry> entries;
 
-    void add(usize offset, usize gen) {
-        entries.pushBack({offset, gen, true});
+    void add(usize num, usize offset, usize gen) {
+        if (num >= entries.len()) {
+            entries.resize(num + 1);
+        }
+
+        entries[num] = {offset, gen, true};
     }
 
     Res<> write(Io::Writer& writer) const;

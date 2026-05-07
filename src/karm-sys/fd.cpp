@@ -1,14 +1,14 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Sys:fd;
 
 import Karm.Core;
 import Karm.Ref;
+import Karm.Sys.Base;
 
 import :addr;
-import :message;
 import :stat;
 import :types;
 
@@ -29,6 +29,8 @@ export struct Fd : Meta::NoCopy {
 
     virtual Res<usize> seek(Io::Seek) = 0;
 
+    virtual Res<> truncate(usize) = 0;
+
     virtual Res<> flush() = 0;
 
     virtual Res<Rc<Fd>> dup() = 0;
@@ -40,6 +42,11 @@ export struct Fd : Meta::NoCopy {
     virtual Res<_Sent> send(Bytes, Slice<Handle>, SocketAddr) = 0;
 
     virtual Res<_Received> recv(MutBytes, MutSlice<Handle>) = 0;
+
+    virtual Res<Rc<Fd>> slice(urange range) {
+        (void)range;
+        return Error::unsupported();
+    }
 
     virtual Res<> serialize(Serde::Serializer&) const {
         return Error::notImplemented();
@@ -59,6 +66,10 @@ export struct BlobFd : Fd {
     }
 
     Res<usize> write(Bytes) override {
+        return Error::readOnlyFilesystem();
+    }
+
+    Res<> truncate(usize) override {
         return Error::readOnlyFilesystem();
     }
 
@@ -112,6 +123,10 @@ export struct NullFd : Fd {
     }
 
     Res<> flush() override {
+        return Ok();
+    }
+
+    Res<> truncate(usize) override {
         return Ok();
     }
 

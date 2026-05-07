@@ -8,6 +8,10 @@ export constexpr f64 PI = 3.14159265358979323846;
 
 export constexpr f64 TAU = 2 * PI;
 
+export constexpr f64 HALF_PI = PI / 2.0;
+
+export constexpr f64 LOG2 = 0.6931471805599453;
+
 // sqrt(2)
 export constexpr f64 SQRT2 = 1.41421356237309504880;
 

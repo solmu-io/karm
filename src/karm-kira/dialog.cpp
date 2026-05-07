@@ -1,12 +1,13 @@
 export module Karm.Kira:dialog;
 
+import Karm.Core;
 import Karm.Ui;
 import Karm.App;
 import Karm.Gfx;
 import Karm.Math;
 import Mdi;
 
-import :separator;
+using namespace Karm::Literals;
 
 namespace Karm::Kira {
 
@@ -15,7 +16,7 @@ export Ui::Child dialogContent(Ui::Children children) {
         .borderRadii = 8,
         .borderWidth = 1,
         .borderFill = Ui::GRAY800,
-        .backgroundFill = Ui::GRAY950,
+        .backgroundFill = Ui::GRAY900,
         .shadowStyle = Gfx::BoxShadow::elevated(16)
     };
 
@@ -23,22 +24,16 @@ export Ui::Child dialogContent(Ui::Children children) {
            box(boxStyle) |
            Ui::dragRegion() |
            Ui::align(Math::Align::CENTER | Math::Align::CLAMP) |
-           Ui::insets(32);
+           Ui::insets(16);
 }
 
 export Ui::Child dialogTitleBar(String title) {
-    return Ui::vflow(
-        Ui::hflow(
-            Ui::titleSmall(title) | Ui::vcenter(),
-            Ui::grow(NONE),
-            Ui::button(Ui::closeDialog, Ui::ButtonStyle::subtle(), Mdi::CLOSE)
-        ) | Ui::box({
-                .padding = {4, 4, 4, 16},
-                .borderRadii = {8, 8, 0, 0},
-                .backgroundFill = Ui::GRAY900,
-            }),
-        separator()
-    );
+    return Ui::hflow(
+               Ui::titleSmall(title) | Ui::vcenter(),
+               Ui::grow(NONE),
+               Ui::button(Ui::closeDialog, Ui::ButtonStyle::subtle(), Mdi::CLOSE)
+           ) |
+           Ui::insets({4, 4, 4, 16});
 }
 
 export Ui::Child dialogHeader(Ui::Children children) {
@@ -62,17 +57,15 @@ export Ui::Child dialogDescription(String text) {
 
 export Ui::Child dialogFooter(Ui::Children children) {
     auto isMobile = App::formFactor == App::FormFactor::MOBILE;
-    if (not isMobile)
-        children.pushFront(Ui::grow(NONE));
     return Ui::flow(
                {
                    isMobile ? Math::Flow::TOP_TO_BOTTOM : Math::Flow::LEFT_TO_RIGHT,
                    Math::Align::FILL,
-                   8,
+                   4,
                },
                children
            ) |
-           Ui::insets({8, 16, 16, 16});
+           Ui::insets({4, 8, 8, 8});
 }
 
 export Ui::Child dialogAction(Opt<Ui::Send<>> onPress, String text) {
@@ -101,6 +94,7 @@ export Ui::Child alertDialog(String title, String description) {
             dialogDescription(description),
         }),
         dialogFooter({
+            Ui::grow(NONE),
             dialogAction(Ui::SINK<>, "Ok"s),
         }),
     });

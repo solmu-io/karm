@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.union_;
 
@@ -11,6 +11,14 @@ import :base.opt;
 import :meta.pack;
 
 namespace Karm {
+
+export template <typename... Ts>
+struct Visitor : Ts... {
+    using Ts::operator()...;
+};
+
+export template <typename... Ts>
+Visitor(Ts...) -> Visitor<Ts...>;
 
 export template <typename... Ts>
 struct Union {
@@ -112,7 +120,7 @@ struct Union {
     }
 
     template <Meta::Contains<Ts...> T>
-    always_inline T const& unwrapOr(T const& fallback) const lifetimebound {
+    always_inline T unwrapOr(T fallback) const {
         if (_index != Meta::indexOf<T, Ts...>())
             return fallback;
 
@@ -139,12 +147,12 @@ struct Union {
         return std::move(*reinterpret_cast<T*>(_buf));
     }
 
-    always_inline auto visit(auto visitor) {
-        return Meta::indexCast<Ts...>(_index, _buf, visitor);
+    always_inline auto visit(auto&&... visitors) {
+        return Meta::indexCast<Ts...>(_index, _buf, Visitor{std::forward<decltype(visitors)>(visitors)...});
     }
 
-    always_inline auto visit(auto visitor) const {
-        return Meta::indexCast<Ts...>(_index, _buf, visitor);
+    always_inline auto visit(auto&&... visitors) const {
+        return Meta::indexCast<Ts...>(_index, _buf, Visitor{std::forward<decltype(visitors)>(visitors)...});
     }
 
     always_inline static auto any(auto visitor) {
@@ -163,6 +171,17 @@ struct Union {
         if (_index != Meta::indexOf<T, Ts...>())
             return nullptr;
         return (T const*)_buf;
+    }
+
+    template <typename T>
+    Opt<T> subset() const {
+        return visit([]<typename U>(U const& v) -> Opt<T> {
+            if constexpr (Meta::Constructible<T, U>) {
+                return T{v};
+            } else {
+                return NONE;
+            }
+        });
     }
 
     always_inline usize index() const { return _index; }
@@ -207,23 +226,48 @@ struct Union {
         return false;
     }
 
-    u64 hash() const {
-        return hash(
-            hash(_index),
-            visit([](auto const& v) {
-                return Karm::hash(v);
-            })
-        );
+    explicit operator bool() const {
+        return visit([](auto const& v) {
+            return static_cast<bool>(v);
+        });
+    }
+
+    void hash(Meta::Derive<Hasher> auto& h) const {
+        visit([&](auto const& v) {
+            Karm::hash(h, v);
+        });
     }
 };
 
-export template <typename... Ts>
-struct Visitor : Ts... {
-    using Ts::operator()...;
-};
+export void dispatch(auto visitor) {
+    visitor();
+}
 
-export template <typename... Ts>
-Visitor(Ts...) -> Visitor<Ts...>;
+export template <typename V, typename T, typename... Ts>
+void dispatch(V visitor, T&& t, Ts&&... ts) {
+    if constexpr (
+        requires(T t) { t.visit(
+                            [](auto&&...) {
+                            }
+                        ); }
+    ) {
+        t.visit([&](auto&& val) {
+            dispatch(
+                [&](auto&&... args) {
+                    visitor(val, std::forward<decltype(args)>(args)...);
+                },
+                std::forward<Ts>(ts)...
+            );
+        });
+    } else {
+        dispatch(
+            [&](auto&&... args) {
+                visitor(t, std::forward<decltype(args)>(args)...);
+            },
+            std::forward<Ts>(ts)...
+        );
+    }
+}
 
 template <typename T, typename... Ts>
 struct _FlattenUnion {

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:base.box;
 
@@ -103,14 +103,6 @@ struct Box {
         return unwrap();
     }
 
-    constexpr operator T&() lifetimebound {
-        return unwrap();
-    }
-
-    constexpr operator T const&() const lifetimebound {
-        return unwrap();
-    }
-
     constexpr T const& unwrap() const lifetimebound {
         if (not _ptr) [[unlikely]]
             panic("deferencing moved from Box<T>");
@@ -123,8 +115,8 @@ struct Box {
         return *_ptr;
     }
 
-    constexpr u64 hash() const {
-        return hash(unwrap());
+    constexpr void hash(Meta::Derive<Hasher> auto& h) const {
+        Karm::hash(h, unwrap());
     }
 };
 
@@ -145,6 +137,11 @@ export template <typename T, typename D = DeleteDeleter<T>, typename... Args>
     requires Meta::Constructible<T, Args...>
 constexpr Box<T, D> makeBox(Args... args) {
     return {MOVE, new T(std::forward<Args>(args)...)};
+}
+
+export template <typename T, typename D = DeleteDeleter<T>>
+constexpr Box<T, D> makeBox(T&& value) {
+    return {MOVE, new T(std::forward<T>(value))};
 }
 
 } // namespace Karm

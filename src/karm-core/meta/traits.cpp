@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:meta.traits;
 
@@ -80,7 +80,10 @@ export template <typename T>
 concept Pod = Trivial<T> and StandardLayout<T>;
 
 export template <typename T>
-concept TrivialyCopyable = __is_trivially_copyable(T);
+concept TriviallyCopyable = __is_trivially_copyable(T);
+
+export template <typename T>
+concept UniqueObjectRepresentations = __has_unique_object_representations(T);
 
 export template <typename T>
 concept Aggregate = __is_aggregate(T);
@@ -124,14 +127,8 @@ concept Convertible = requires {
     declval<void (*)(To)>()(declval<From>());
 };
 
-template <typename T, typename U>
-inline constexpr bool _Same = false;
-
-template <typename T>
-inline constexpr bool _Same<T, T> = true;
-
 export template <typename T, typename U>
-concept Same = _Same<T, U>;
+concept Same = __is_same(T, U);
 
 /// A type is comparable if it can be compared using the <=> operator.
 /// Comparable does not imply Equatable.

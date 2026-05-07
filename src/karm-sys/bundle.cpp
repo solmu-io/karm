@@ -1,12 +1,14 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Sys:bundle;
 
 import Karm.Ref;
 
 import :_embed;
+
+using namespace Karm::Literals;
 
 namespace Karm::Sys {
 

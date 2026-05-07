@@ -11,6 +11,8 @@ import :atoms;
 import :view;
 import :text;
 
+using namespace Karm::Math::Literals;
+
 namespace Karm::Ui {
 
 // MARK: Button ----------------------------------------------------------------
@@ -64,8 +66,7 @@ export struct MouseListener {
                     state = PRESS;
                     event.accept();
 
-                } else if (e->type == App::MouseEvent::RELEASE and
-                           e->button == App::MouseButton::LEFT) {
+                } else if (e->type == App::MouseEvent::RELEASE and e->button == App::MouseButton::LEFT) {
                     if (state == PRESS) {
                         state = HOVER;
                         result = true;
@@ -324,24 +325,24 @@ export auto button(Opt<Send<>> onPress, ButtonStyle style) {
 
 export Child button(Opt<Send<>> onPress, ButtonStyle style, Str t) {
     return text(t) |
-           insets({6, 16}) |
+           insets({4, 14}) |
            center() |
-           minSize({UNCONSTRAINED, 36}) |
+           minSize({UNCONSTRAINED, 32}) |
            button(std::move(onPress), style);
 }
 
 export Child button(Opt<Send<>> onPress, ButtonStyle style, Gfx::Icon i) {
     return icon(i) |
-           insets(6) |
+           insets(4) |
            center() |
-           minSize({36, 36}) |
+           minSize({32, 32}) |
            button(std::move(onPress), style);
 }
 
 export Child button(Opt<Send<>> onPress, ButtonStyle style, Gfx::Icon i, Str t) {
     return hflow(8, Math::Align::CENTER, icon(i), text(t)) |
-           insets({6, 16, 6, 12}) |
-           minSize({UNCONSTRAINED, 36}) |
+           insets({4, 14, 4, 10}) |
+           minSize({UNCONSTRAINED, 32}) |
            button(std::move(onPress), style);
 }
 
@@ -380,31 +381,43 @@ static void _paintCaret(Gfx::Canvas& g, Gfx::Prose& p, usize runeIndex, Gfx::Col
     g.lineTo(ce);
     g.strokeStyle({
         .fill = color,
-        .width = 2.0,
+        .width = 1.0,
         .align = Gfx::CENTER_ALIGN,
     });
     g.stroke();
 }
 
 static void _paintSelection(Gfx::Canvas& g, Gfx::Prose& p, usize start, usize end, Gfx::Color color) {
-    if (start == end)
+    if (start == end or isEmpty(p._lines))
         return;
 
-    if (not p._style.multiline) {
-        auto ps = p.queryPosition(start);
-        auto pe = p.queryPosition(end);
-        auto m = p._style.font.metrics();
+    if (start > end)
+        std::swap(start, end);
 
-        auto rect =
+    auto m = p._style.font.metrics();
+    auto [startLi, startBi, startCi] = p.lbcAt(start);
+    auto [endLi, endBi, endCi] = p.lbcAt(end);
+
+    g.fillStyle(color);
+
+    for (usize li = startLi; li <= endLi; li++) {
+        auto& line = p._lines[li];
+
+        auto lineStart = (li == startLi)
+                             ? p.queryPosition(start)
+                             : Vec2Au{0_au, line.baseline};
+
+        auto lineEnd = (li == endLi)
+                           ? p.queryPosition(end)
+                           : Vec2Au{line.width, line.baseline};
+
+        g.fill(
             RectAu::fromTwoPoint(
-                ps + Vec2Au{0_au, Au{m.descend}},
-                pe - Vec2Au{0_au, Au{m.ascend}}
+                lineStart + Vec2Au{0_au, Au{m.descend}},
+                lineEnd - Vec2Au{0_au, Au{m.ascend}}
             )
-                .cast<f64>();
-
-        g.fillStyle(color);
-        g.fill(rect);
-        return;
+                .cast<f64>()
+        );
     }
 }
 
@@ -414,6 +427,7 @@ struct Input : View<Input> {
     FocusListener _focus;
     Rc<TextModel> _model;
     Send<TextAction> _onChange;
+    bool _mouseDown = false;
 
     Opt<Rc<Gfx::Prose>> _text;
 
@@ -432,6 +446,7 @@ struct Input : View<Input> {
 
     Gfx::Prose& _ensureText() {
         if (not _text) {
+            _style.collapseEmptyLines = false;
             _text = makeRc<Gfx::Prose>(_style);
             (*_text)->append(_model->runes());
         }
@@ -458,6 +473,30 @@ struct Input : View<Input> {
     }
 
     void event(App::Event& e) override {
+        _focus.event(*this, e);
+
+        if (auto me = e.is<App::MouseEvent>()) {
+            if (me->type == App::MouseEvent::PRESS and
+                me->button == App::MouseButton::LEFT and
+                bound().contains(me->pos)) {
+                _ensureText().layout(Au{bound().width});
+                auto local = me->pos - bound().xy;
+                auto pos = _ensureText().hitTest({Au{local.x}, Au{local.y}});
+                _mouseDown = true;
+                _onChange(*this, TextAction::moveTo(pos));
+                e.accept();
+            } else if (me->type == App::MouseEvent::MOVE and _mouseDown) {
+                _ensureText().layout(Au{bound().width});
+                auto local = me->pos - bound().xy;
+                auto pos = _ensureText().hitTest({Au{local.x}, Au{local.y}});
+                _onChange(*this, TextAction::selectTo(pos));
+                e.accept();
+            } else if (me->type == App::MouseEvent::RELEASE and me->button == App::MouseButton::LEFT) {
+                _mouseDown = false;
+            }
+            return;
+        }
+
         auto a = TextAction::fromEvent(e);
         if (a) {
             e.accept();
@@ -472,6 +511,8 @@ struct Input : View<Input> {
 
     Math::Vec2i size(Math::Vec2i s, Hint) override {
         auto size = _ensureText().layout(Au{s.width});
+        // NOTE: Ensure the input is always at least 1 pixel wide to show the caret.
+        size.x = max(size.x, Au{1});
         return size.ceil().cast<isize>();
     }
 };
@@ -492,6 +533,7 @@ struct SimpleInput : View<SimpleInput> {
     FocusListener _focus;
     Opt<TextModel> _model;
     Opt<Rc<Gfx::Prose>> _prose;
+    bool _mouseDown = false;
 
     SimpleInput(Gfx::ProseStyle style, String text, Send<String> onChange)
         : _style(style),
@@ -520,6 +562,7 @@ struct SimpleInput : View<SimpleInput> {
 
     Gfx::Prose& _ensureText() {
         if (not _prose) {
+            _style.collapseEmptyLines = false;
             _prose = makeRc<Gfx::Prose>(_style);
             (*_prose)->append(_ensureModel().runes());
         }
@@ -547,7 +590,34 @@ struct SimpleInput : View<SimpleInput> {
 
     void event(App::Event& e) override {
         _focus.event(*this, e);
+
+        if (auto me = e.is<App::MouseEvent>()) {
+            if (me->type == App::MouseEvent::PRESS and
+                me->button == App::MouseButton::LEFT and
+                bound().contains(me->pos)) {
+                _ensureText().layout(Au{bound().width});
+                auto local = me->pos - bound().xy;
+                auto pos = _ensureText().hitTest({Au{local.x}, Au{local.y}});
+                _mouseDown = true;
+                _ensureModel().setCursor(pos);
+                shouldRepaint(*this);
+                e.accept();
+            } else if (me->type == App::MouseEvent::MOVE and _mouseDown) {
+                _ensureText().layout(Au{bound().width});
+                auto local = me->pos - bound().xy;
+                auto pos = _ensureText().hitTest({Au{local.x}, Au{local.y}});
+                _ensureModel().setSelectionEnd(pos);
+                shouldRepaint(*this);
+                e.accept();
+            } else if (me->type == App::MouseEvent::RELEASE and me->button == App::MouseButton::LEFT) {
+                _mouseDown = false;
+            }
+            return;
+        }
+
         auto a = TextAction::fromEvent(e);
+        if (a and a->op == TextAction::NEWLINE and not _style.multiline)
+            a = NONE;
         if (a) {
             e.accept();
             _ensureModel().reduce(*a);
@@ -559,11 +629,13 @@ struct SimpleInput : View<SimpleInput> {
 
     void layout(Math::Recti bound) override {
         _ensureText().layout(Au{bound.width});
-        View<SimpleInput>::layout(bound);
+        View::layout(bound);
     }
 
     Math::Vec2i size(Math::Vec2i s, Hint) override {
         auto size = _ensureText().layout(Au{s.width});
+        // NOTE: Ensure the input is always at least 1 pixel wide to show the caret.
+        size.x = max(size.x, Au{1});
         return size.ceil().cast<isize>();
     }
 };
@@ -578,6 +650,7 @@ struct Slider : ProxyNode<Slider> {
     f64 _value = 0.0f;
     Send<f64> _onChange;
     Math::Recti _bound;
+    bool _grabbed = false;
 
     Slider(f64 value, Send<f64> onChange, Child child)
         : ProxyNode<Slider>(std::move(child)),
@@ -601,19 +674,33 @@ struct Slider : ProxyNode<Slider> {
         return _bound;
     }
 
-    void bubble(App::Event& e) override {
-        if (auto dv = e.is<App::DragEvent>()) {
-            if (dv->type == App::DragEvent::DRAG) {
+    void event(App::Event& e) override {
+        ProxyNode::event(e);
+
+        if (e.accepted())
+            return;
+
+        if (auto it = e.is<App::MouseEvent>(); it and _grabbed) {
+            if (it->type == App::MouseEvent::RELEASE) {
+                _grabbed = false;
+                e.accept();
+            } else if (it->type == App::MouseEvent::MOVE) {
                 auto max = bound().width - bound().height;
                 auto value = max * _value;
-                value = clamp(value + dv->delta.x, 0.0f, max);
+                value = clamp(value + it->delta.x, 0.0f, max);
                 _value = value / max;
                 _onChange(*this, _value);
+                e.accept();
             }
+        }
+    }
+
+    void bubble(App::Event& e) override {
+        if (e.is<App::DragStartEvent>()) {
+            _grabbed = true;
             e.accept();
         }
-
-        ProxyNode<Slider>::bubble(e);
+        ProxyNode::bubble(e);
     }
 };
 

@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 
 export module Karm.Core:json;
 
@@ -9,6 +9,8 @@ import :io.aton;
 import :io.emit;
 import :io.expr;
 import :io.funcs;
+
+using namespace Karm::Re::Literals;
 
 namespace Karm::Json {
 
@@ -61,9 +63,39 @@ Res<String> parseStr(Io::SScan& s) {
                 continue;
             }
             if (s.skip('u')) {
-                if (Io::atou(s, {.base = 16})) {
-                    continue;
+                auto parseCodeUnit = [&]() -> Res<Utf16::Unit> {
+                    auto hex = s.token(Re::exactly(4, Re::xdigit()));
+                    if (not hex)
+                        return Error::invalidData();
+
+                    auto unit = Io::atou(hex, {.base = 16});
+                    if (not unit)
+                        return Error::invalidData("expected 4 hex digits after \\u");
+
+                    return Ok(*unit);
+                };
+
+                auto high = try$(parseCodeUnit());
+
+                Utf16::One units;
+                units.put(high);
+
+                if (Utf16::unitLen(high) == 2) {
+                    if (not s.skip('\\') or not s.skip('u'))
+                        return Error::invalidData("expected low surrogate");
+
+                    auto low = try$(parseCodeUnit());
+
+                    units.put(low);
                 }
+
+                Rune rune;
+                Cursor cursor{units.buf(), units.len()};
+                if (not Utf16::decodeUnit(rune, cursor))
+                    return Error::invalidData("invalid utf16");
+
+                sw.append(rune);
+                continue;
             }
         }
 
@@ -255,6 +287,37 @@ export Res<Serde::Value> parse(Str s) {
 
 // MARK: Unparse ---------------------------------------------------------------
 
+export void escape(Io::Emit& emit, Str s) {
+    for (auto c : iterRunes(s)) {
+        if (c == '"') {
+            emit("\\\"");
+        } else if (c == '\\') {
+            emit("\\\\");
+        } else if (c == '\b') {
+            emit("\\b");
+        } else if (c == '\f') {
+            emit("\\f");
+        } else if (c == '\n') {
+            emit("\\n");
+        } else if (c == '\r') {
+            emit("\\r");
+        } else if (c == '\t') {
+            emit("\\t");
+        } else if (c < 0x20 || c > 0x7E) {
+            Utf16::One units;
+            Utf16::encodeUnit(c, units);
+
+            if (units.len() == 2) {
+                emit("\\u{04X}\\u{04X}", units[0], units[1]);
+            } else {
+                emit("\\u{04X}", units[0]);
+            }
+        } else {
+            emit(c);
+        }
+    }
+}
+
 export Res<> unparse(Io::Emit& emit, Serde::Value const& v) {
     return v.visit(
         Visitor{
@@ -277,43 +340,23 @@ export Res<> unparse(Io::Emit& emit, Serde::Value const& v) {
             [&](Serde::Object const& m) -> Res<> {
                 emit('{');
                 bool first = true;
-                for (auto const& kv : m.iterUnordered()) {
+                for (auto const& [k, v] : m.iterItems()) {
                     if (not first) {
                         emit(',');
                     }
                     first = false;
 
                     emit('"');
-                    emit(kv.v0);
+                    escape(emit, k);
                     emit("\":");
-                    try$(unparse(emit, kv.v1));
+                    try$(unparse(emit, v));
                 }
                 emit('}');
                 return Ok();
             },
             [&](String const& s) -> Res<> {
                 emit('"');
-                for (auto c : iterRunes(s)) {
-                    if (c == '"') {
-                        emit("\\\"");
-                    } else if (c == '\\') {
-                        emit("\\\\");
-                    } else if (c == '\b') {
-                        emit("\\b");
-                    } else if (c == '\f') {
-                        emit("\\f");
-                    } else if (c == '\n') {
-                        emit("\\n");
-                    } else if (c == '\r') {
-                        emit("\\r");
-                    } else if (c == '\t') {
-                        emit("\\t");
-                    } else if (c < 0x20) {
-                        emit("\\u{x}", c);
-                    } else {
-                        emit(c);
-                    }
-                }
+                escape(emit, s);
                 emit('"');
                 return Ok();
             },
@@ -335,6 +378,12 @@ export Res<> unparse(Io::Emit& emit, Serde::Value const& v) {
     );
 }
 
+export Res<> unparse(Io::TextWriter& tw, Serde::Value const& v) {
+    Io::Emit emit{tw};
+    try$(unparse(emit, v));
+    return Ok();
+}
+
 export Res<String> unparse(Serde::Value const& v) {
     Io::StringWriter sw;
     Io::Emit emit{sw};
@@ -344,6 +393,10 @@ export Res<String> unparse(Serde::Value const& v) {
 
 } // namespace Karm::Json
 
+namespace Karm::Json::Literals {
+
 export auto operator""_json(char const* str, Karm::usize len) {
     return Karm::Json::parse({str, len}).unwrap();
 }
+
+} // namespace Karm::Json::Literals
