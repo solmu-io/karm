@@ -1,6 +1,6 @@
 module;
 
-#include <karm-core/macros.h>
+#include <karm/macros>
 #include <cstdio>
 #include <jpeglib.h>
 #include <jerror.h>
