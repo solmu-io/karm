@@ -147,7 +147,7 @@ export struct PdfPrinter : FilePrinter {
 
             // Add all images to page resources
             Pdf::Dict pageImagesDict;
-            for (auto& [imageId, objRef] : imageId2ObjRef) {
+            for (auto& [imageId, objRef] : imageId2ObjRef.iter()) {
 
                 auto formattedName = Io::format("Im{}", imageId);
                 pageImagesDict.put(formattedName.str(), objRef);
